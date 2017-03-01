@@ -1,0 +1,2380 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>St.thomas</title>
+    <description>这是一个程序员的日记薄，记录工作与生活的点点滴滴。包括WEB程序开发、Linux服务器管理、LAMP/LNMP环境配置优化、PHP网络技术、MySQL优化等技术分享以及个人生活旅行中的所见所闻所解。</description>
+    <link>http://localhost:4000/</link>
+    <atom:link href="http://localhost:4000/feed.xml" rel="self" type="application/rss+xml" />
+    <pubDate>Wed, 01 Mar 2017 10:43:51 +0800</pubDate>
+    <lastBuildDate>Wed, 01 Mar 2017 10:43:51 +0800</lastBuildDate>
+    <generator>Jekyll v3.4.0</generator>
+    
+      <item>
+        <title>单表60亿记录等大数据场景的MySQL优化和运维之道 | 高可用架构</title>
+        <description>&lt;blockquote&gt;
+  &lt;p&gt;杨尚刚，美图公司数据库高级DBA，负责美图后端数据存储平台建设和架构设计。前新浪高级数据库工程师，负责新浪微博核心数据库架构改造优化，以及数据库相关的服务器存储选型设计。&lt;/p&gt;
+&lt;/blockquote&gt;
+
+&lt;h3 id=&quot;前言&quot;&gt;前言&lt;/h3&gt;
+&lt;hr /&gt;
+&lt;p&gt;MySQL数据库大家应该都很熟悉，而且随着前几年的阿里的去IOE，MySQL逐渐引起更多人的重视。&lt;/p&gt;
+
+&lt;h4 id=&quot;mysql历史&quot;&gt;MySQL历史&lt;/h4&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;1979年，Monty Widenius写了最初的版本，96年发布1.0&lt;/li&gt;
+  &lt;li&gt;1995-2000年，MySQL AB成立，引入BDB&lt;/li&gt;
+  &lt;li&gt;2000年4月，集成MyISAM和replication&lt;/li&gt;
+  &lt;li&gt;2001年，Heikki Tuuri向MySQL建议集成InnoDB&lt;/li&gt;
+  &lt;li&gt;2003发布5.0，提供了视图、存储过程等功能&lt;/li&gt;
+  &lt;li&gt;2008年，MySQL AB被Sun收购，09年推出5.1&lt;/li&gt;
+  &lt;li&gt;2009年4月，Oracle收购Sun，2010年12月推出5.5&lt;/li&gt;
+  &lt;li&gt;2013年2月推出5.6 GA，5.7开发中&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;h4 id=&quot;mysql的优点&quot;&gt;MySQL的优点&lt;/h4&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;使用简单&lt;/li&gt;
+  &lt;li&gt;开源免费&lt;/li&gt;
+  &lt;li&gt;扩展性“好”，在一定阶段扩展性好&lt;/li&gt;
+  &lt;li&gt;社区活跃&lt;/li&gt;
+  &lt;li&gt;性能可以满足互联网存储和性能需求，离不开硬件支持&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;上面这几个因素也是大多数公司选择考虑MySQL的原因。不过MySQL本身存在的问题和限制也很多，有些问题点也经常被其他数据库吐槽或鄙视&lt;/p&gt;
+
+&lt;h4 id=&quot;mysql存在的问题&quot;&gt;MySQL存在的问题&lt;/h4&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;优化器对复杂SQL支持不好&lt;/li&gt;
+  &lt;li&gt;对SQL标准支持不好&lt;/li&gt;
+  &lt;li&gt;大规模集群方案不成熟，主要指中间件&lt;/li&gt;
+  &lt;li&gt;ID生成器，全局自增ID&lt;/li&gt;
+  &lt;li&gt;异步逻辑复制，数据安全性问题&lt;/li&gt;
+  &lt;li&gt;Online DDL&lt;/li&gt;
+  &lt;li&gt;HA方案不完善&lt;/li&gt;
+  &lt;li&gt;备份和恢复方案还是比较复杂，需要依赖外部组件&lt;/li&gt;
+  &lt;li&gt;展现给用户信息过少，排查问题困难&lt;/li&gt;
+  &lt;li&gt;众多分支，让人难以选择&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;看到了刚才讲的MySQL的优势和劣势，可以看到MySQL面临的问题还是远大于它的优势的,很多问题也是我们实际需要在运维中优化解决的，这也是MySQL DBA的一方面价值所在。并且MySQL的不断发展也离不开社区支持，比如Google最早提交的半同步patch，后来也合并到官方主线。Facebook Twitter等也都开源了内部使用MySQL分支版本，包含了他们内部使用的patch和特性。&lt;/p&gt;
+
+&lt;h3 id=&quot;数据库开发规范&quot;&gt;数据库开发规范&lt;/h3&gt;
+&lt;hr /&gt;
+&lt;p&gt;数据库开发规范定义：开发规范是针对内部开发的一系列建议或规则, 由DBA制定(如果有DBA的话)。&lt;/p&gt;
+
+&lt;p&gt;开发规范本身也包含几部分：基本命名和约束规范，字段设计规范，索引规范，使用规范。&lt;/p&gt;
+
+&lt;h4 id=&quot;规范存在意义&quot;&gt;规范存在意义&lt;/h4&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;保证线上数据库schema规范&lt;/li&gt;
+  &lt;li&gt;减少出问题概率&lt;/li&gt;
+  &lt;li&gt;方便自动化管理&lt;/li&gt;
+  &lt;li&gt;规范需要长期坚持，对开发和DBA是一个双赢的事情&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;想想没有开发规范，有的开发写出各种全表扫描的SQL语句或者各种奇葩SQL语句，我们之前就看过开发写的SQL 可以打印出好几页纸。这种造成业务本身不稳定，也会让DBA天天忙于各种救火。&lt;/p&gt;
+
+&lt;h4 id=&quot;基本命名和约束规范&quot;&gt;基本命名和约束规范&lt;/h4&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;表字符集选择UTF8 ，如果需要存储emoj表情，需要使用UTF8mb4(MySQL 5.5.3以后支持)&lt;/li&gt;
+  &lt;li&gt;存储引擎使用InnoDB&lt;/li&gt;
+  &lt;li&gt;变长字符串尽量使用varchar varbinary&lt;/li&gt;
+  &lt;li&gt;不在数据库中存储图片、文件等&lt;/li&gt;
+  &lt;li&gt;单表数据量控制在1亿以下&lt;/li&gt;
+  &lt;li&gt;库名、表名、字段名不使用保留字&lt;/li&gt;
+  &lt;li&gt;库名、表名、字段名、索引名使用小写字母，以下划线分割 ，需要见名知意&lt;/li&gt;
+  &lt;li&gt;库表名不要设计过长，尽可能用最少的字符表达出表的用途&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;h4 id=&quot;字段规范&quot;&gt;字段规范&lt;/h4&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;所有字段均定义为NOT NULL ，除非你真的想存Null&lt;/li&gt;
+  &lt;li&gt;字段类型在满足需求条件下越小越好，使用UNSIGNED存储非负整数 ，实际使用时候存储负数场景不多&lt;/li&gt;
+  &lt;li&gt;使用TIMESTAMP存储时间&lt;/li&gt;
+  &lt;li&gt;使用varchar存储变长字符串 ，当然要注意varchar(M)里的M指的是字符数不是字节数；使用UNSIGNED INT存储IPv4 地址而不是CHAR(15) ，这种方式只能存储IPv4，存储不了IPv6&lt;/li&gt;
+  &lt;li&gt;使用DECIMAL存储精确浮点数，用float有的时候会有问题&lt;/li&gt;
+  &lt;li&gt;少用blob text&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;关于为什么定义不使用Null的原因&lt;/p&gt;
+
+&lt;p&gt;1、浪费存储空间，因为InnoDB需要有额外一个字节存储&lt;/p&gt;
+
+&lt;p&gt;2、表内默认值Null过多会影响优化器选择执行计划&lt;/p&gt;
+
+&lt;p&gt;关于使用datatime和timestamp，现在在5.6.4之后又有了变化，使用二者存储在存储空间上大差距越来越小 ，并且本身datatime存储范围就比timestamp大很多，timestamp只能存储到2038年。&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;http://source.francissoung.com/2016/04/15/高可用架构-1.jpeg&quot; alt=&quot;单表60亿记录等大数据场景的MySQL优化和运维之道&quot; /&gt;&lt;/p&gt;
+
+&lt;h4 id=&quot;索引规范&quot;&gt;索引规范&lt;/h4&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;单个索引字段数不超过5，单表索引数量不超过5，索引设计遵循B+ Tree索引最左前缀匹配原则&lt;/li&gt;
+  &lt;li&gt;选择区分度高的列作为索引&lt;/li&gt;
+  &lt;li&gt;建立的索引能覆盖80%主要的查询，不求全，解决问题的主要矛盾&lt;/li&gt;
+  &lt;li&gt;DML和order by和group by字段要建立合适的索引&lt;/li&gt;
+  &lt;li&gt;避免索引的隐式转换&lt;/li&gt;
+  &lt;li&gt;避免冗余索引&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;关于索引规范，一定要记住索引这个东西是一把双刃剑，在加速读的同时也引入了很多额外的写入和锁，降低写入能力，这也是为什么要控制索引数原因。之前看到过不少人给表里每个字段都建了索引，其实对查询可能起不到什么作用。&lt;/p&gt;
+
+&lt;p&gt;&lt;strong&gt;冗余索引例子&lt;/strong&gt;&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;
+    &lt;p&gt;idx_abc(a,b,c)&lt;/p&gt;
+  &lt;/li&gt;
+  &lt;li&gt;
+    &lt;p&gt;idx_a(a) 冗余&lt;/p&gt;
+  &lt;/li&gt;
+  &lt;li&gt;
+    &lt;p&gt;idx_ab(a,b) 冗余&lt;/p&gt;
+  &lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;&lt;strong&gt;隐式转换例子&lt;/strong&gt;&lt;/p&gt;
+
+&lt;p&gt;字段:&lt;code class=&quot;highlighter-rouge&quot;&gt;remark varchar(50) NOT Null &lt;/code&gt;&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;MySQL&amp;gt;SELECT id, gift_code FROM gift WHERE deal_id = 640 AND remark=115127; 1 row in set (0.14 sec)
+
+MySQL&amp;gt;SELECT id, gift_code FROM pool_gift WHEREdeal_id = 640 AND remark=‘115127’; 1 row in set (0.005 sec)
+&lt;/code&gt;&lt;/pre&gt;
+&lt;/div&gt;
+
+&lt;p&gt;字段定义为varchar，但传入的值是个int，就会导致全表扫描，要求程序端要做好类型检查&lt;/p&gt;
+
+&lt;h4 id=&quot;sql类规范&quot;&gt;SQL类规范&lt;/h4&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;尽量不使用存储过程、触发器、函数等&lt;/li&gt;
+  &lt;li&gt;避免使用大表的JOIN，MySQL优化器对join优化策略过于简单&lt;/li&gt;
+  &lt;li&gt;避免在数据库中进行数学运算和其他大量计算任务&lt;/li&gt;
+  &lt;li&gt;SQL合并，主要是指的DML时候多个value合并，减少和数据库交互&lt;/li&gt;
+  &lt;li&gt;合理的分页，尤其大分页&lt;/li&gt;
+  &lt;li&gt;UPDATE、DELETE语句不使用LIMIT ，容易造成主从不一致&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;h3 id=&quot;数据库运维规范&quot;&gt;数据库运维规范&lt;/h3&gt;
+&lt;hr /&gt;
+
+&lt;h4 id=&quot;运维规范主要内容&quot;&gt;运维规范主要内容&lt;/h4&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;SQL审核，DDL审核和操作时间，尤其是OnlineDDL&lt;/li&gt;
+  &lt;li&gt;高危操作检查，Drop前做好数据备份&lt;/li&gt;
+  &lt;li&gt;权限控制和审计&lt;/li&gt;
+  &lt;li&gt;日志分析，主要是指的MySQL慢日志和错误日志&lt;/li&gt;
+  &lt;li&gt;高可用方案&lt;/li&gt;
+  &lt;li&gt;数据备份方案&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;h4 id=&quot;版本选择&quot;&gt;版本选择&lt;/h4&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;MySQL社区版，用户群体最大&lt;/li&gt;
+  &lt;li&gt;MySQL企业版，收费&lt;/li&gt;
+  &lt;li&gt;Percona Server版，新特性多&lt;/li&gt;
+  &lt;li&gt;MariaDB版，国内用户不多&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;建议选择优先级为：MySQL社区版 &amp;gt; Percona Server &amp;gt; MariaDB &amp;gt; MySQL 企业版，不过现在如果大家使用RDS服务，基本还以社区版为主。&lt;/p&gt;
+
+&lt;h4 id=&quot;online-ddl问题&quot;&gt;Online DDL问题&lt;/h4&gt;
+
+&lt;p&gt;原生MySQL执行DDL时需要锁表，且锁表期间业务是无法写入数据的，对服务影响很大，MySQL对这方面的支持是比较差的。大表做DDL对DBA来说是很痛苦的，相信很多人经历过。如何做到Online DDL呢，是不是就无解了呢？当然不是！&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;http://source.francissoung.com/2016/04/15/高可用架构-2.jpeg&quot; alt=&quot;单表60亿记录等大数据场景的MySQL优化和运维之道&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;上面表格里提到的 Facebook OSC和5.6 OSC也是目前两种比较靠谱的方案&lt;/p&gt;
+
+&lt;p&gt;MySQL 5.6的OSC方案还是解决不了DDL的时候到从库延时的问题，所以现在建议使用Facebook OSC这种思路更优雅&lt;/p&gt;
+
+&lt;p&gt;下图是Facebook OSC的思路&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;http://source.francissoung.com/2016/04/15/高可用架构-3.jpeg&quot; alt=&quot;单表60亿记录等大数据场景的MySQL优化和运维之道&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;后来Percona公司根据Facebook OSC思路，用perl重写了一版，就是我们现在用得很多的pt-online-schema-change，软件本身非常成熟，支持目前主流版本。&lt;/p&gt;
+
+&lt;p&gt;&lt;strong&gt;使用pt-online-schema-change的优点有：&lt;/strong&gt;&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;无阻塞写入&lt;/li&gt;
+  &lt;li&gt;完善的条件检测和延时负载策略控制&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;值得一提的是，腾讯互娱的DBA在内部分支上也实现了Online DDL，之前测试过确实不错，速度快，原理是通过修改InnoDB存储格式来实现。&lt;/p&gt;
+
+&lt;p&gt;&lt;strong&gt;使用pt-online-schema-change的限制有：&lt;/strong&gt;&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;改表时间会比较长(相比直接alter table改表)&lt;/li&gt;
+  &lt;li&gt;修改的表需要有唯一键或主键&lt;/li&gt;
+  &lt;li&gt;在同一端口上的并发修改不能太多&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;h4 id=&quot;可用性&quot;&gt;可用性&lt;/h4&gt;
+
+&lt;p&gt;关于可用性，我们今天分享一种无缝切主库方案，可以用于日常切换，使用思路也比较简单&lt;/p&gt;
+
+&lt;p&gt;在正常条件下如何无缝去做主库切换，核心思路是让新主库和从库停在相同位置，主要依赖slave start until 语句，结合双主结构，考虑自增问题。&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;http://source.francissoung.com/2016/04/15/高可用架构-4.jpeg&quot; alt=&quot;单表60亿记录等大数据场景的MySQL优化和运维之道&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;&lt;strong&gt;MySQL集群方案：&lt;/strong&gt;&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;集群方案主要是如何组织MySQL实例的方案&lt;/li&gt;
+  &lt;li&gt;主流方案核心依然采用的是MySQL原生的复制方案&lt;/li&gt;
+  &lt;li&gt;原生主从同步肯定存在着性能和安全性问题&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;&lt;strong&gt;MySQL半同步复制：&lt;/strong&gt;&lt;/p&gt;
+
+&lt;p&gt;现在也有一些理论上可用性更高的其它方案&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;Percona XtraDB Cluster(没有足够的把控力度，不建议上)&lt;/li&gt;
+  &lt;li&gt;MySQL Cluster(有官方支持，不过实际用的不多)&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;&lt;img src=&quot;http://source.francissoung.com/2016/04/15/高可用架构-5.jpeg&quot; alt=&quot;单表60亿记录等大数据场景的MySQL优化和运维之道&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;红框内是目前大家使用比较多的部署结构和方案。当然异常层面的HA也有很多第三方工具支持，比如MHA、MMM等，推荐使用MHA。&lt;/p&gt;
+
+&lt;h4 id=&quot;sharding拆分问题&quot;&gt;sharding拆分问题&lt;/h4&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;Sharding is very complex, so itʼs best not to shard until itʼs obvious that you will actually need to!&lt;/li&gt;
+  &lt;li&gt;sharding是按照一定规则数据重新分布的方式&lt;/li&gt;
+  &lt;li&gt;主要解决单机写入压力过大和容量问题&lt;/li&gt;
+  &lt;li&gt;主要有垂直拆分和水平拆分两种方式&lt;/li&gt;
+  &lt;li&gt;拆分要适度，切勿过度拆分&lt;/li&gt;
+  &lt;li&gt;有中间层控制拆分逻辑最好，否则拆分过细管理成本会很高&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;曾经管理的单表最大60亿＋，单表数据文件大小1TB＋，人有时候就要懒一些。&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;http://source.francissoung.com/2016/04/15/高可用架构-6.jpeg&quot; alt=&quot;单表60亿记录等大数据场景的MySQL优化和运维之道&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;上图是水平拆分和垂直拆分的示意图&lt;/p&gt;
+
+&lt;h4 id=&quot;数据库备份&quot;&gt;数据库备份&lt;/h4&gt;
+
+&lt;p&gt;首先要保证的，最核心的是数据库数据安全性。数据安全都保障不了的情况下谈其他的指标(如性能等)，其实意义就不大了。&lt;/p&gt;
+
+&lt;p&gt;&lt;strong&gt;备份的意义是什么呢?&lt;/strong&gt;&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;&lt;strong&gt;数据恢复！&lt;/strong&gt;&lt;/li&gt;
+  &lt;li&gt;&lt;strong&gt;数据恢复！&lt;/strong&gt;&lt;/li&gt;
+  &lt;li&gt;&lt;strong&gt;数据恢复！&lt;/strong&gt;&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;&lt;strong&gt;目前备份方式的几个纬度：&lt;/strong&gt;&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;全量备份 VS 增量备份&lt;/li&gt;
+  &lt;li&gt;热备 VS 冷备&lt;/li&gt;
+  &lt;li&gt;物理备份 VS 逻辑备份&lt;/li&gt;
+  &lt;li&gt;延时备份&lt;/li&gt;
+  &lt;li&gt;全量binlog备份&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;&lt;strong&gt;建议方式：&lt;/strong&gt;&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;热备＋物理备份&lt;/li&gt;
+  &lt;li&gt;核心业务：延时备份＋逻辑备份&lt;/li&gt;
+  &lt;li&gt;全量binlog备份&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;借用一下某大型互联网公司做的备份系统数据：一年7000＋次扩容，一年12＋次数据恢复，日志量每天3TB，数据总量2PB，每天备份数据量百TB级，全年备份36万次，备份成功了99.9%。&lt;/p&gt;
+
+&lt;p&gt;&lt;strong&gt;主要做的几点：&lt;/strong&gt;&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;备份策略集中式调度管理&lt;/li&gt;
+  &lt;li&gt;xtrabackup热备&lt;/li&gt;
+  &lt;li&gt;备份结果统计分析&lt;/li&gt;
+  &lt;li&gt;备份数据一致性校验&lt;/li&gt;
+  &lt;li&gt;采用分布式文件系统存储备份&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;&lt;strong&gt;备份系统采用分布式文件系统原因：&lt;/strong&gt;&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;解决存储分配的问题&lt;/li&gt;
+  &lt;li&gt;解决存储NFS备份效率低下问题&lt;/li&gt;
+  &lt;li&gt;存储集中式管理&lt;/li&gt;
+  &lt;li&gt;数据可靠性更好&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;&lt;strong&gt;使用分布式文件系统优化点：&lt;/strong&gt;&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;Pbzip压缩，降低多副本存储带来的存储成本，降低网络带宽消耗&lt;/li&gt;
+  &lt;li&gt;元数据节点HA，提高备份集群的可用性&lt;/li&gt;
+  &lt;li&gt;erasure code方案调研&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;h4 id=&quot;数据恢复方案&quot;&gt;数据恢复方案&lt;/h4&gt;
+
+&lt;p&gt;目前的MySQL数据恢复方案主要还是基于备份来恢复，可见备份的重要性。比如我今天下午15点删除了线上一张表，该如何恢复呢？首先确认删除语句，然后用备份扩容实例启动，假设备份时间点是凌晨3点，就还需要把凌晨3点到现在关于这个表的binlog导出来，然后应用到新扩容的实例上，确认好恢复的时间点，然后把删除表的数据导出来应用到线上。&lt;/p&gt;
+
+&lt;h3 id=&quot;性能优化&quot;&gt;性能优化&lt;/h3&gt;
+&lt;hr /&gt;
+
+&lt;h4 id=&quot;复制优化&quot;&gt;复制优化&lt;/h4&gt;
+
+&lt;p&gt;&lt;strong&gt;MySQL复制：&lt;/strong&gt;&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;是MySQL应用得最普遍的应用技术，扩展成本低&lt;/li&gt;
+  &lt;li&gt;逻辑复制&lt;/li&gt;
+  &lt;li&gt;单线程问题，从库延时问题&lt;/li&gt;
+  &lt;li&gt;可以做备份或读复制&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;问题很多，但是能解决基本问题。&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;http://source.francissoung.com/2016/04/15/高可用架构-7.jpeg&quot; alt=&quot;单表60亿记录等大数据场景的MySQL优化和运维之道&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;上图是MySQL复制原理图，红框内就是MySQL一直被人诟病的单线程问题。&lt;/p&gt;
+
+&lt;p&gt;单线程问题也是MySQL主从延时的一个重要原因，&lt;strong&gt;单线程解决方案&lt;/strong&gt;：&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;官方5.6+多线程方案&lt;/li&gt;
+  &lt;li&gt;Tungsten为代表的第三方并行复制工具&lt;/li&gt;
+  &lt;li&gt;sharding&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;&lt;img src=&quot;http://source.francissoung.com/2016/04/15/高可用架构-8.jpeg&quot; alt=&quot;单表60亿记录等大数据场景的MySQL优化和运维之道&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;上图是MySQL5.6 目前实现的并行复制原理图，是基于库级别的复制，所以如果你只有一个库，使用这个意义不大。&lt;/p&gt;
+
+&lt;p&gt;当然MySQL也认识到5.6这种并行的瓶颈所在，所以在5.7引入了另外一种并行复制方式，基于logical timestamp的并行复制，并行复制不再受限于库的个数，效率会大大提升。&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;http://source.francissoung.com/2016/04/15/高可用架构-9.jpeg&quot; alt=&quot;单表60亿记录等大数据场景的MySQL优化和运维之道&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;上图是5.7的logical timestamp的复制原理图&lt;/p&gt;
+
+&lt;p&gt;刚才我也提到MySQL原来只支持异步复制，这种数据安全性是非常差的，所以后来引入了半同步复制，从5.5开始支持。&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;http://source.francissoung.com/2016/04/15/高可用架构-11.jpeg&quot; alt=&quot;单表60亿记录等大数据场景的MySQL优化和运维之道&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;上图是原生异步复制和半同步复制的区别。可以看到半同步通过从库返回ACK这种方式确认从库收到数据，数据安全性大大提高。&lt;/p&gt;
+
+&lt;p&gt;在5.7之后，半同步也可以配置你指定多个从库参与半同步复制，之前版本都是默认一个从库。&lt;/p&gt;
+
+&lt;p&gt;对于半同步复制效率问题有一个小的优化，就是使用5.6+的mysqlbinlog以daemon方式作为从库，同步效率会好很多。&lt;/p&gt;
+
+&lt;p&gt;关于更安全的复制，MySQL 5.7也是有方案的，方案名叫Group replication 官方多主方案，基于Corosync实现。&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;http://source.francissoung.com/2016/04/15/高可用架构-12.jpeg&quot; alt=&quot;单表60亿记录等大数据场景的MySQL优化和运维之道&quot; /&gt;&lt;/p&gt;
+
+&lt;h4 id=&quot;主从延时问题&quot;&gt;主从延时问题&lt;/h4&gt;
+
+&lt;p&gt;&lt;strong&gt;原因&lt;/strong&gt;：一般都会做读写分离，其实从库压力反而比主库大／从库读写压力大非常容易导致延时。&lt;/p&gt;
+
+&lt;p&gt;&lt;strong&gt;解决方案：&lt;/strong&gt;&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;首先定位延时瓶颈&lt;/li&gt;
+  &lt;li&gt;如果是IO压力，可以通过升级硬件解决，比如替换SSD等&lt;/li&gt;
+  &lt;li&gt;如果IO和CPU都不是瓶颈，非常有可能是SQL单线程问题，解决方案可以考虑刚才提到的并行复制方案&lt;/li&gt;
+  &lt;li&gt;如果还有问题，可以考虑sharding拆分方案&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;提到延时不得不提到很坑人的Seconds behind master，使用过MySQL的应该很熟悉。&lt;/p&gt;
+
+&lt;p&gt;这个值的源码里算法&lt;/p&gt;
+
+&lt;p&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;long time_diff= ((long)(time(0) – mi-&amp;gt;rli.last_master_timestamp) – mi-&amp;gt;clock_diff_with_master); &lt;/code&gt;&lt;/p&gt;
+
+&lt;p&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;Secondsbehindmaster&lt;/code&gt;来判断延时不可靠，在网络抖动或者一些特殊参数配置情况下，会造成这个值是0但其实延时很大了。通过heartbeat表插入时间戳这种机制判断延时是更靠谱的&lt;/p&gt;
+
+&lt;p&gt;复制注意点：&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;Binlog格式，建议都采用row格式，数据一致性更好&lt;/li&gt;
+  &lt;li&gt;Replication filter应用&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;&lt;strong&gt;主从数据一致性问题：&lt;/strong&gt;&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;row格式下的数据恢复问题&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;h4 id=&quot;innodb优化&quot;&gt;InnoDB优化&lt;/h4&gt;
+
+&lt;p&gt;成熟开源事务存储引擎，支持ACID，支持事务四个隔离级别，更好的数据安全性，高性能高并发，MVCC，细粒度锁，支持O_DIRECT。&lt;/p&gt;
+
+&lt;p&gt;主要优化参数：&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;innodbfileper_table =1&lt;/li&gt;
+  &lt;li&gt;innodbbufferpool_size，根据数据量和内存合理设置&lt;/li&gt;
+  &lt;li&gt;innodbflushlog_attrxcommit= 0 1 2&lt;/li&gt;
+  &lt;li&gt;innodblogfile_size，可以设置大一些&lt;/li&gt;
+  &lt;li&gt;innodbpagesize&lt;/li&gt;
+  &lt;li&gt;Innodbflushmethod = o_direct&lt;/li&gt;
+  &lt;li&gt;innodbundodirectory 放到高速设备(5.6＋)&lt;/li&gt;
+  &lt;li&gt;innodbbufferpool_dump&lt;/li&gt;
+  &lt;li&gt;atshutdown ，bufferpool dump (5.6+)&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;&lt;img src=&quot;http://source.francissoung.com/2016/04/15/高可用架构-13.jpeg&quot; alt=&quot;单表60亿记录等大数据场景的MySQL优化和运维之道&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;上图是5.5 4G的redo log和5.6 设置大于4G redo log文件性能对比，可以看到稳定性更好了。innodblogfile_size设置还是很有意义的。&lt;/p&gt;
+
+&lt;p&gt;&lt;strong&gt;InnoDB比较好的特性：&lt;/strong&gt;&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;Bufferpool预热和动态调整大小，动态调整大小需要5.7支持&lt;/li&gt;
+  &lt;li&gt;Page size自定义调整，适应目前硬件&lt;/li&gt;
+  &lt;li&gt;InnoDB压缩，大大降低数据容量，一般可以压缩50%，节省存储空间和IO，用CPU换空间&lt;/li&gt;
+  &lt;li&gt;Transportable tablespaces，迁移ibd文件，用于快速单表恢复&lt;/li&gt;
+  &lt;li&gt;Memcached API，full text，GIS等&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;&lt;strong&gt;InnoDB在SSD上的优化：&lt;/strong&gt;&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;在5.5以上，提高innodbwriteiothreads和innodbreadiothreads&lt;/li&gt;
+  &lt;li&gt;innodbiocapacity需要调大*&lt;/li&gt;
+  &lt;li&gt;日志文件和redo放到机械硬盘，undo放到SSD，建议这样，但必要性不大&lt;/li&gt;
+  &lt;li&gt;atomic write,不需要Double Write Buffer&lt;/li&gt;
+  &lt;li&gt;InnoDB压缩&lt;/li&gt;
+  &lt;li&gt;单机多实例&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;也要搞清楚InnoDB哪些文件是顺序读写，哪些是随机读写。&lt;/p&gt;
+
+&lt;p&gt;&lt;strong&gt;随机读写：&lt;/strong&gt;&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;datadir&lt;/li&gt;
+  &lt;li&gt;innodbdata file_path&lt;/li&gt;
+  &lt;li&gt;innodbundo directory&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;&lt;strong&gt;顺序读写：&lt;/strong&gt;&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;innodbloggrouphomedir&lt;/li&gt;
+  &lt;li&gt;log-bin&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;&lt;strong&gt;InnoDB VS MyISAM：&lt;/strong&gt;&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;数据安全性至关重要，InnoDB完胜，曾经遇到过一次90G的MyISAM表repair，花了两天时间，如果在线上几乎不可忍受&lt;/li&gt;
+  &lt;li&gt;并发度高&lt;/li&gt;
+  &lt;li&gt;MySQL 5.5默认引擎改为InnoDB，标志着MyISAM时代的落幕&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;&lt;strong&gt;TokuDB：&lt;/strong&gt;&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;支持事务 ACID 特性，支持多版本控制(MVCC)&lt;/li&gt;
+  &lt;li&gt;基于Fractal Tree Index，非常适合写入密集场景&lt;/li&gt;
+  &lt;li&gt;高压缩比，原生支持Online DDL&lt;/li&gt;
+  &lt;li&gt;主流分支都支持，收费转开源 。目前可以和InnoDB媲美的存储引擎&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;目前主流使用TokuDB主要是看中了它的高压缩比，Tokudb有三种压缩方式：quicklz、zlib、lzma，压缩比依次更高。现在很多使用zabbix的后端数据表都采用的TokuDB，写入性能好，压缩比高。&lt;/p&gt;
+
+&lt;p&gt;下图是我之前做的测试对比和InnoDB&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;http://source.francissoung.com/2016/04/15/高可用架构-14.jpeg&quot; alt=&quot;单表60亿记录等大数据场景的MySQL优化和运维之道&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;http://source.francissoung.com/2016/04/15/高可用架构-15.jpeg&quot; alt=&quot;单表60亿记录等大数据场景的MySQL优化和运维之道&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;上图是sysbench测试的和InnoDB性能对比图，可以看到TokuDB在测试过程中写入稳定性是非常好的。&lt;/p&gt;
+
+&lt;p&gt;&lt;strong&gt;tokudb存在的问题：&lt;/strong&gt;&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;官方分支还没很好的支持&lt;/li&gt;
+  &lt;li&gt;热备方案问题，目前只有企业版才有&lt;/li&gt;
+  &lt;li&gt;还是有bug的，版本更新比较快，不建议在核心业务上用&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;比如我们之前遇到过一个问题：TokuDB的内部状态显示上一次完成的checkpoint时间是“Jul 17 12:04:11 2014”，距离当时发现现在都快5个月了，结果堆积了大量redo log不能删除，后来只能重启实例，结果重启还花了七八个小时。&lt;/p&gt;
+
+&lt;h4 id=&quot;mysql优化相关的case&quot;&gt;MySQL优化相关的case&lt;/h4&gt;
+
+&lt;p&gt;Query cache，MySQL内置的查询加速缓存，理念是好的,但设计不够合理，有点out。&lt;/p&gt;
+
+&lt;p&gt;锁的粒度非常大MySQL 5.6默认已经关闭&lt;/p&gt;
+
+&lt;p&gt;When the query cache helps, it can help a lot. When it hurts, it can hurt a lot.明显前半句已经没有太大用处，在高并发下非常容易遇到瓶颈。&lt;/p&gt;
+
+&lt;p&gt;关于事务隔离级别 ，InnoDB默认隔离级别是可重复读级别，当然InnoDB虽然是设置的可重复读，但是也是解决了幻读的，建议改成读已提交级别，可以满足大多数场景需求，有利于更高的并发，修改transaction-isolation。&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;http://source.francissoung.com/2016/04/15/高可用架构-16.jpeg&quot; alt=&quot;单表60亿记录等大数据场景的MySQL优化和运维之道&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;http://source.francissoung.com/2016/04/15/高可用架构-18.jpg&quot; alt=&quot;单表60亿记录等大数据场景的MySQL优化和运维之道&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;上图是一个比较经典的死锁case，有兴趣可以测试下。&lt;/p&gt;
+
+&lt;h4 id=&quot;关于ssd&quot;&gt;关于SSD&lt;/h4&gt;
+
+&lt;p&gt;关于SSD，还是提一下吧。某知名大V说过“最近10年对数据库性能影响最大的是闪存”，稳定性和性能可靠性已经得到大规模验证，多块SATA SSD做Raid5，推荐使用。采用PCIe SSD，主流云平台都提供SSD云硬盘支持。&lt;/p&gt;
+
+&lt;h4 id=&quot;最后说一下大家关注的单表60亿记录问题表里数据也是线上比较核心的&quot;&gt;最后说一下大家关注的单表60亿记录问题，表里数据也是线上比较核心的。&lt;/h4&gt;
+
+&lt;p&gt;先说下当时情况，表结构比较简单，都是bigint这种整型，索引比较多，应该有2-3个，单表行数60亿＋，单表容量1.2TB左右，当然内部肯定是有碎片的。&lt;/p&gt;
+
+&lt;p&gt;&lt;strong&gt;形成原因&lt;/strong&gt;：历史遗留问题，按照我们前面讲的开发规范，这个应该早拆分了，当然不拆有几个原因：&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;
+    &lt;p&gt;性能未遇到瓶颈 ，主要原因&lt;/p&gt;
+  &lt;/li&gt;
+  &lt;li&gt;
+    &lt;p&gt;DBA比较“懒“&lt;/p&gt;
+  &lt;/li&gt;
+  &lt;li&gt;
+    &lt;p&gt;想看看InnoDB的极限，挑战一下。不过风险也是很大的，想想如果在一个1.2TB表上加个字段加个索引，那感觉绝对酸爽。还有就是单表恢复的问题，恢复时间不可控。&lt;/p&gt;
+  &lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;我们后续做的优化 ，采用了刚才提到的TokuDB，单表容量在InnoDB下1TB+，使用Tokudb的lzma压缩到80GB，压缩效果非常好。这样也解决了单表过大恢复时间问题，也支持online DDL，基本达到我们预期。&lt;/p&gt;
+
+&lt;p&gt;今天讲的主要针对MySQL本身优化和规范性质的东西，还有一些比较好的运维经验，希望大家能有所收获。今天这些内容是为后续数据库做平台化的基础。我今天分享就到这里，谢谢大家。&lt;/p&gt;
+
+&lt;h3 id=&quot;qa&quot;&gt;QA&lt;/h3&gt;
+&lt;hr /&gt;
+
+&lt;p&gt;&lt;strong&gt;Q1：use schema;select * from table; 和select * from schema.table;两种写法有什么不一样吗？会对主从同步有影响吗？&lt;/strong&gt;
+对于主从复制来说执行效率上差别不大，不过在使用replication filter时候这种情况需要小心，应该要使用ReplicateWildIgnoreTable这种参数，如果不使用带wildignore，第一种方式会有问题，过滤不起作用。&lt;/p&gt;
+
+&lt;p&gt;&lt;strong&gt;Q2：对于用于MySQL的ssd，测试方式和ssd的参数配置方面，有没有好的建议？主要针对ssd的配置哈&lt;/strong&gt;&lt;/p&gt;
+
+&lt;p&gt;关于SATA SSD配置参数，建议使用Raid5，想更保险使用Raid50，更土豪使用Raid 10&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;http://source.francissoung.com/2016/04/15/高可用架构-17.jpeg&quot; alt=&quot;单表60亿记录等大数据场景的MySQL优化和运维之道&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;上图是主要的参数优化，性能提升最大的是第一个修改调度算法的&lt;/p&gt;
+
+&lt;p&gt;&lt;strong&gt;Q3：数据库规范已制定好，如何保证开发人员必须按照规范来开发？&lt;/strong&gt;&lt;/p&gt;
+
+&lt;p&gt;关于数据库规范实施问题，也是有两个方面吧，第一、定期给开发培训开发规范，让开发能更了解。第二、还是在流程上规范，比如把我们日常通用的建表和字段策略固化到程序，做成自动化审核系统。这两方面结合 效果会比较好。&lt;/p&gt;
+
+&lt;p&gt;&lt;strong&gt;Q4：如何最大限度提高innodb的命中率？&lt;/strong&gt;&lt;/p&gt;
+
+&lt;p&gt;这个问题前提是你的数据要有热点，读写热点要有交集，否则命中率很难提高。在有热点的前提下，也要求你的你的内存要足够大，能够存更多的热点数据。尽量不要做一些可能污染bufferpool的操作，比如全表扫描这种。&lt;/p&gt;
+
+&lt;p&gt;&lt;strong&gt;Q5：主从复制的情况下，如果有CAS这样的需求，是不是只能强制连主库？因为有延迟的存在，如果读写不在一起的话，会有脏数据。&lt;/strong&gt;&lt;/p&gt;
+
+&lt;p&gt;如果有CAS需求，确实还是直接读主库好一些，因为异步复制还是会有延迟的。只要SQL优化的比较好，读写都在主库也是没什么问题的。&lt;/p&gt;
+
+&lt;p&gt;&lt;strong&gt;Q6：关于开发规范，是否有必要买国标?&lt;/strong&gt;&lt;/p&gt;
+
+&lt;p&gt;这个国标是什么东西，不太了解。不过从字面看，国标应该也是偏学术方面的，在具体工程实施时候未必能用好。&lt;/p&gt;
+
+&lt;p&gt;&lt;strong&gt;Q7：主从集群能不能再细化一点那？不知道这样问合适不？&lt;/strong&gt;&lt;/p&gt;
+
+&lt;p&gt;看具体哪方面吧。主从集群每个小集群一般都是采用一主多从方式，每个小集群对应特定的一组业务。然后监控备份和HA都是在每个小集群实现。&lt;/p&gt;
+
+&lt;p&gt;&lt;strong&gt;Q8：如何跟踪数据库table某个字段值发生变化？&lt;/strong&gt;&lt;/p&gt;
+
+&lt;p&gt;追踪字段值变化可以通过分析row格式binlog好一些。比如以前同事就是通过自己开发的工具来解析row格式binlog，跟踪数据行变化。&lt;/p&gt;
+
+&lt;p&gt;&lt;strong&gt;Q9：对超大表水平拆分，在使用MySQL中间件方面有什么建议和经验分享？&lt;/strong&gt;&lt;/p&gt;
+
+&lt;p&gt;对于超大表水平拆分，在中间件上经验不是很多，早期人肉搞过几次。也使用过自己研发的数据库中间件，不过线上应用的规模不大。关于目前众多的开源中间件里，360的atlas是目前还不错的，他们公司内部应用的比较多。&lt;/p&gt;
+
+&lt;p&gt;&lt;strong&gt;Q10：我们用的MySQL proxy做读负载，但是少量数据压力下并没有负载，请问有这回事吗？&lt;/strong&gt;&lt;/p&gt;
+
+&lt;p&gt;少量数据压力下，并没有负载 ，这个没测试过，不好评价&lt;/p&gt;
+
+&lt;p&gt;&lt;strong&gt;Q11：对于binlog格式，为什么只推荐row，而不用网上大部分文章推荐的Mix ？&lt;/strong&gt;&lt;/p&gt;
+
+&lt;p&gt;这个主要是考虑数据复制的可靠性，row更好。mixed含义是指如果有一些容易导致主从不一致的SQL ，比如包含UUID函数的这种，转换为row。既然要革命，就搞的彻底一些。这种mix的中间状态最坑人了。&lt;/p&gt;
+
+&lt;p&gt;&lt;strong&gt;Q12： 读写分离，一般是在程序里做，还是用proxy ，用proxy的话一般用哪个？&lt;/strong&gt;&lt;/p&gt;
+
+&lt;p&gt;这个还是独立写程序好一些，与程序解耦方便后期维护。proxy国内目前开源的比较多，选择也要慎重。&lt;/p&gt;
+
+&lt;p&gt;&lt;strong&gt;Q13： 我想问一下关于mysql线程池相关的问题，什么情况下适合使用线程池，相关的参数应该如何配置，老师有这方面的最佳实践没有？&lt;/strong&gt;&lt;/p&gt;
+
+&lt;p&gt;线程池这个我也没测试过。从原理上来说，短链接更适合用线程池方式，减少建立连接的消耗。这个方面的最佳配置，我还没测试过，后面测试有进展可以再聊聊。&lt;/p&gt;
+
+&lt;p&gt;&lt;strong&gt;Q14： 误删数据这种，数据恢复流程是怎么样的(从库也被同步删除的情况)？&lt;/strong&gt;&lt;/p&gt;
+
+&lt;p&gt;看你删除数据的情况，如果只是一张表，单表在几GB或几十GB。如果能有延时备份，对于数据恢复速度是很有好处的。恢复流程可以参考我刚才分享的部分。目前的MySQL数据恢复方案主要还是基于备份来恢复 ，可见备份的重要性。比如我今天下午15点删除了线上一张表，该如何恢复呢。首先确认删除语句，然后用备份扩容实例启动，假设备份时间点是凌晨3点。就还需要把凌晨3点到现在关于这个表的binlog导出来，然后应用到新扩容的实例上。确认好恢复的时间点，然后把删除表的数据导出来应用到线上。&lt;/p&gt;
+
+&lt;p&gt;&lt;strong&gt;Q15： 关于备份，binlog备份自然不用说了，物理备份有很多方式，有没有推荐的一种，逻辑备份在量大的时候恢复速度比较慢，一般用在什么场景？&lt;/strong&gt;&lt;/p&gt;
+
+&lt;p&gt;物理备份采用xtrabackup热备方案比较好。逻辑备份一般用在单表恢复效果会非常好。比如你删了一个2G表，但你总数据量2T，用物理备份就会要慢了，逻辑备份就非常有用了。&lt;/p&gt;
+</description>
+        <pubDate>Fri, 15 Apr 2016 00:00:00 +0800</pubDate>
+        <link>http://localhost:4000/2016/04/15/%E5%8D%95%E8%A1%A860%E4%BA%BF%E8%AE%B0%E5%BD%95%E7%AD%89%E5%A4%A7%E6%95%B0%E6%8D%AE%E5%9C%BA%E6%99%AF%E7%9A%84MySQL%E4%BC%98%E5%8C%96%E5%92%8C%E8%BF%90%E7%BB%B4%E4%B9%8B%E9%81%93/</link>
+        <guid isPermaLink="true">http://localhost:4000/2016/04/15/%E5%8D%95%E8%A1%A860%E4%BA%BF%E8%AE%B0%E5%BD%95%E7%AD%89%E5%A4%A7%E6%95%B0%E6%8D%AE%E5%9C%BA%E6%99%AF%E7%9A%84MySQL%E4%BC%98%E5%8C%96%E5%92%8C%E8%BF%90%E7%BB%B4%E4%B9%8B%E9%81%93/</guid>
+        
+        <category>Francis 杂谈</category>
+        
+        <category>架构</category>
+        
+        <category>MySQL</category>
+        
+        
+      </item>
+    
+      <item>
+        <title>WebService的两种方式SOAP和REST比较</title>
+        <description>&lt;blockquote&gt;
+  &lt;p&gt;由于第一次接触WebService，对于很多概念不太理解，尤其是看到各个OpenAPI的不同提供方式时，更加疑惑。如google map api采用了AJAX方式，通过javascript提供API,而淘宝TOP则采用直接的HTTP+XML请求方式，最令我疑惑的是教材上讲的WSDL，UDDI从没有在这些API中出现过。现在知道了WebService原来有两种方式，一是SOAP协议方式，在这种方式下需要WSDL,UDDI等，二是REST方式，这种方式根本不需要WSDL,UDDI等。而且REST方式现在看来是更加流行，更有前途的方式。&lt;/p&gt;
+&lt;/blockquote&gt;
+
+&lt;p&gt;在SOA的基础技术实现方式中WebService占据了很重要的地位，通常我们提到WebService第一想法就是SOAP消息在各种传输协议上交互。近几年REST的思想伴随着SOA逐渐被大家接受，同时各大网站不断开放API提供给开发者，也激起了REST风格WebService的热潮。&lt;/p&gt;
+
+&lt;p&gt;在收到新需求Email之前，我对REST的理解仅仅是通过半懂不懂的看了Fielding的REST博士论文，说实话当时也就是希望了解这么一个新概念，对于其内部的思想只是很肤浅的了解了一下。&lt;/p&gt;
+
+&lt;p&gt;ASF的最新需求就是可能需要实现REST风格的WebService集成，因此不得不好好的去看看REST的真正思想含义以及当前各大网站的设计方式。后面所要表述的也是我这个初学者的一些看法和观点，抛砖引玉，希望在我将REST融入到ASF之前能够获得更多的反馈和意见。&lt;/p&gt;
+
+&lt;h3 id=&quot;soap&quot;&gt;SOAP&lt;/h3&gt;
+
+&lt;p&gt;什么是SOAP，我想不用多说，google一把满眼都是。其实SOAP最早是针对RPC的一种解决方案，简单对象访问协议，很轻量，同时作为应用协议可以基于多种传输协议来传递消息（Http,SMTP等）。但是随着SOAP作为WebService的广泛应用，不断地增加附加的内容，使得现在开发人员觉得SOAP很重，使用门槛很高。在SOAP后续的发展过程中，WS-*一系列协议的制定，增加了SOAP的成熟度，也给SOAP增加了负担。&lt;/p&gt;
+
+&lt;h3 id=&quot;rest&quot;&gt;REST&lt;/h3&gt;
+
+&lt;p&gt;REST其实并不是什么协议也不是什么标准，而是将Http协议的设计初衷作了诠释，在Http协议被广泛利用的今天，越来越多的是将其作为传输协议，而非原先设计者所考虑的应用协议。SOAP类型的WebService就是最好的例子，SOAP消息完全就是将Http协议作为消息承载，以至于对于Http协议中的各种参数（例如编码，错误码等）都置之不顾。其实，最轻量级的应用协议就是Http协议。Http协议所抽象的get,post,put,delete就好比数据库中最基本的增删改查，而互联网上的各种资源就好比数据库中的记录（可能这么比喻不是很好），对于各种资源的操作最后总是能抽象成为这四种基本操作，在定义了定位资源的规则以后，对于资源的操作通过标准的Http协议就可以实现，开发者也会受益于这种轻量级的协议。&lt;/p&gt;
+
+&lt;p&gt;自己理解的将REST的思想归结以下有如下几个关键点：&lt;/p&gt;
+
+&lt;h4 id=&quot;面向资源的接口设计&quot;&gt;面向资源的接口设计&lt;/h4&gt;
+&lt;p&gt;所有的接口设计都是针对资源来设计的，也就很类似于我们的面向对象和面向过程的设计区别，只不过现在将网络上的操作实体都作为资源来看待，同时URI的设计也是体现了对于资源的定位设计。后面会提到有一些网站的API设计说是REST设计，其实是RPC-REST的混合体，并非是REST的思想。&lt;/p&gt;
+
+&lt;h4 id=&quot;抽象操作为基础的crud&quot;&gt;抽象操作为基础的CRUD&lt;/h4&gt;
+
+&lt;p&gt;这点很简单，Http中的get,put,post,delete分别对应了read,update,create,delete四种操作，如果仅仅是作为对于资源的操作，抽象成为这四种已经足够了，但是对于现在的一些复杂的业务服务接口设计，可能这样的抽象未必能够满足。其实这也在后面的几个网站的API设计中暴露了这样的问题，如果要完全按照REST的思想来设计，那么适用的环境将会有限制，而非放之四海皆准的。&lt;/p&gt;
+
+&lt;h4 id=&quot;http是应用协议而非传输协议&quot;&gt;Http是应用协议而非传输协议&lt;/h4&gt;
+
+&lt;p&gt;这点在后面各大网站的API分析中有很明显的体现，其实有些网站已经走到了SOAP的老路上，说是REST的理念设计，其实是作了一套私有的SOAP协议，因此称之为REST风格的自定义SOAP协议。&lt;/p&gt;
+
+&lt;h4 id=&quot;无状态自包含&quot;&gt;无状态，自包含&lt;/h4&gt;
+
+&lt;p&gt;这点其实不仅仅是对于REST来说的，作为接口设计都需要能够做到这点，也是作为可扩展和高效性的最基本的保证，就算是使用SOAP的WebService也是一样。&lt;/p&gt;
+
+&lt;h3 id=&quot;rest-vs-soap&quot;&gt;REST vs SOAP&lt;/h3&gt;
+
+&lt;h4 id=&quot;成熟度&quot;&gt;成熟度&lt;/h4&gt;
+
+&lt;p&gt;SOAP虽然发展到现在已经脱离了初衷，但是对于异构环境服务发布和调用，以及厂商的支持都已经达到了较为成熟的情况。不同平台，开发语言之间通过SOAP来交互的web service都能够较好的互通（在部分复杂和特殊的参数和返回对象解析上，协议没有作很细致的规定，导致还是需要作部分修正）&lt;/p&gt;
+
+&lt;p&gt;REST国外很多大网站都发布了自己的开发API，很多都提供了SOAP和REST两种Web Service，根据调查部分网站的REST风格的使用情况要高于SOAP。但是由于REST只是一种基于Http协议实现资源操作的思想，因此各个网站的REST实现都自有一套，在后面会讲诉各个大网站的REST API的风格。也正是因为这种各自实现的情况，在性能和可用性上会大大高于SOAP发布的web service，但统一通用方面远远不及SOAP。由于这些大网站的SP往往专注于此网站的API开发，因此通用性要求不高。&lt;/p&gt;
+
+&lt;p&gt;ASF上考虑发布REST风格的Web Service，可以参考几大网站的设计（兄弟公司的方案就是参考了类似于flickr的设计模式），但是由于没有类似于SOAP的权威性协议作为规范，REST实现的各种协议仅仅只能算是私有协议，当然需要遵循REST的思想，但是这样细节方面有太多没有约束的地方。REST日后的发展所走向规范也会直接影响到这部分的设计是否能够有很好的生命力。&lt;/p&gt;
+
+&lt;p&gt;总的来说SOAP在成熟度上优于REST。&lt;/p&gt;
+
+&lt;h4 id=&quot;效率和易用性&quot;&gt;效率和易用性&lt;/h4&gt;
+
+&lt;p&gt;SOAP协议对于消息体和消息头都有定义，同时消息头的可扩展性为各种互联网的标准提供了扩展的基础，WS-*系列就是较为成功的规范。但是也由于SOAP由于各种需求不断扩充其本身协议的内容，导致在SOAP处理方面的性能有所下降。同时在易用性方面以及学习成本上也有所增加。&lt;/p&gt;
+
+&lt;p&gt;REST被人们的重视，其实很大一方面也是因为其高效以及简洁易用的特性。这种高效一方面源于其面向资源接口设计以及操作抽象简化了开发者的不良设计，同时也最大限度的利用了Http最初的应用协议设计理念。同时，在我看来REST还有一个很吸引开发者的就是能够很好的融合当前Web2.0的很多前端技术来提高开发效率。例如很多大型网站开放的REST风格的API都会有多种返回形式，除了传统的xml作为数据承载，还有（JSON,RSS,ATOM）等形式，这对很多网站前端开发人员来说就能够很好的mashup各种资源信息。&lt;/p&gt;
+
+&lt;p&gt;因此在效率和易用性上来说，REST更胜一筹。&lt;/p&gt;
+
+&lt;h4 id=&quot;安全性&quot;&gt;安全性&lt;/h4&gt;
+
+&lt;p&gt;这点其实可以放入到成熟度中，不过在当前的互联网应用和平台开发设计过程中，安全已经被提到了很高的高度，特别是作为外部接口给第三方调用，安全性可能会高过业务逻辑本身。&lt;/p&gt;
+
+&lt;p&gt;SOAP在安全方面是通过使用XML-Security和XML-Signature两个规范组成了WS-Security来实现安全控制的，当前已经得到了各个厂商的支持，.net ，php ，java 都已经对其有了很好的支持（虽然在一些细节上还是有不兼容的问题，但是互通基本上是可以的）。&lt;/p&gt;
+
+&lt;p&gt;REST没有任何规范对于安全方面作说明，同时现在开放REST风格API的网站主要分成两种，一种是自定义了安全信息封装在消息中（其实这和SOAP没有什么区别），另外一种就是靠硬件SSL来保障,但是这只能够保证点到点的安全，如果是需要多点传输的话SSL就无能为力了。安全这块其实也是一个很大的问题，今年在BEA峰会上看到有演示采用SAML2实现的网站间SSO，其实是直接采用了XML-Security和XML-Signature，效率看起来也不是很高。未来REST规范化和通用化过程中的安全是否也会采用这两种规范，是未知的，但是加入的越多，REST失去它高效性的优势越多。&lt;/p&gt;
+
+&lt;h4 id=&quot;应用设计与改造&quot;&gt;应用设计与改造&lt;/h4&gt;
+
+&lt;p&gt;我们的系统要么就是已经有了那些需要被发布出去的服务，要么就是刚刚设计好的服务，但是开发人员的传统设计思想让REST的形式被接受还需要一点时间。同时在资源型数据服务接口设计上来说按照REST的思想来设计相对来说要容易一些，而对于一些复杂的服务接口来说，可能强要去按照REST的风格来设计会有些牵强。这一点其实可以看看各大网站的接口就可以知道，很多网站还要传入function的名称作为参数，这就明显已经违背了REST本身的设计思路。&lt;/p&gt;
+
+&lt;p&gt;而SOAP本身就是面向RPC来设计的，开发人员十分容易接受，所以不存在什么适应的过程。&lt;/p&gt;
+
+&lt;h4 id=&quot;总的来说其实还是一个老观念适合的才是最好的&quot;&gt;总的来说，其实还是一个老观念，适合的才是最好的&lt;/h4&gt;
+
+&lt;p&gt;技术没有好坏，只有是不是合适，一种好的技术和思想被误用了，那么就会得到反效果。REST和SOAP各自都有自己的优点，同时如果在一些场景下如果去改造REST，其实就会走向SOAP（例如安全）。&lt;/p&gt;
+
+&lt;p&gt;REST对于资源型服务接口来说很合适，同时特别适合对于效率要求很高，但是对于安全要求不高的场景。而SOAP的成熟性可以给需要提供给多开发语言的，对于安全性要求较高的接口设计带来便利。所以我觉得纯粹说什么设计模式将会占据主导地位没有什么意义，关键还是看应用场景。&lt;/p&gt;
+
+&lt;p&gt;同时很重要一点就是不要扭曲了REST现在很多网站都跟风去开发REST风格的接口，其实都是在学其形，不知其心，最后弄得不伦不类，性能上不去，安全又保证不了，徒有一个看似象摸象样的皮囊。&lt;/p&gt;
+
+&lt;h3 id=&quot;rest设计的几种形式&quot;&gt;REST设计的几种形式&lt;/h3&gt;
+
+&lt;p&gt;参看了几个大型网站的REST风格的API设计，这里做一下大致的说明：&lt;/p&gt;
+
+&lt;h4 id=&quot;facebook&quot;&gt;FaceBook&lt;/h4&gt;
+
+&lt;p&gt;&lt;strong&gt;请求消息&lt;/strong&gt;&lt;/p&gt;
+
+&lt;p&gt;在URI设计上采取了类似于REST的风格。例如对于friends的获取，就定义为friends.get，前面部分作为资源定义，后面是具体的操作，其他的API也是类似，资源+操作，因此就算使用http的get方法都可能作了update的操作，其实已经违背了REST的思想，但是说到，其实那么复杂的业务接口设计下，要通过RUCD来抽象所有的接口基本是不实际的。在URI定义好以后，还有详细的参数定义，包括类型以及是否必选。&lt;/p&gt;
+
+&lt;p&gt;&lt;strong&gt;响应消息&lt;/strong&gt;&lt;/p&gt;
+
+&lt;p&gt;有多种方式，XML,JSON。XML有XSD作为参考。有点类似于没有Head的SOAP，只不过这里将原来可以定义在WSDL中的XSD抽取出来了。&lt;/p&gt;
+
+&lt;h4 id=&quot;flickr&quot;&gt;Flickr&lt;/h4&gt;
+
+&lt;p&gt;&lt;strong&gt;请求消息&lt;/strong&gt;&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;http://api.flickr.com/services/rest/？method=flickr.test.echo&amp;amp;name=value 这里就可以很明显看出它所定制的REST请求其实和RPC没有什么太大的区别。
+&lt;/code&gt;&lt;/pre&gt;
+&lt;/div&gt;
+
+&lt;p&gt;&lt;strong&gt;消息返回&lt;/strong&gt;&lt;/p&gt;
+
+&lt;p&gt;正确处理返回&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;cp&quot;&gt;&amp;lt;?xml version=&quot;1.0&quot; encoding=&quot;utf-8&quot; ?&amp;gt;&lt;/span&gt;
+&lt;span class=&quot;nt&quot;&gt;&amp;lt;rsp&lt;/span&gt; &lt;span class=&quot;na&quot;&gt;stat=&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;&quot;ok&quot;&lt;/span&gt;&lt;span class=&quot;nt&quot;&gt;&amp;gt;&lt;/span&gt;
+         [xml-payload-here]
+&lt;span class=&quot;nt&quot;&gt;&amp;lt;/rsp&amp;gt;&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;
+&lt;/div&gt;
+
+&lt;p&gt;错误处理返回&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;cp&quot;&gt;&amp;lt;?xml version=&quot;1.0&quot; encoding=&quot;utf-8&quot; ?&amp;gt;&lt;/span&gt;
+&lt;span class=&quot;nt&quot;&gt;&amp;lt;rsp&lt;/span&gt; &lt;span class=&quot;na&quot;&gt;stat=&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;&quot;fail&quot;&lt;/span&gt;&lt;span class=&quot;nt&quot;&gt;&amp;gt;&lt;/span&gt;
+         &lt;span class=&quot;nt&quot;&gt;&amp;lt;err&lt;/span&gt; &lt;span class=&quot;na&quot;&gt;code=&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;&quot;[error-code]&quot;&lt;/span&gt; &lt;span class=&quot;na&quot;&gt;msg=&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;&quot;[error-message]&quot;&lt;/span&gt; &lt;span class=&quot;nt&quot;&gt;/&amp;gt;&lt;/span&gt;
+&lt;span class=&quot;nt&quot;&gt;&amp;lt;/rsp&amp;gt;&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;
+&lt;/div&gt;
+
+&lt;p&gt;根据返回可以看出已经违背了REST的思想，还是把Http协议作为传输承载协议，并没有真正意义上使用Http协议作为资源访问和操作协议。&lt;/p&gt;
+
+&lt;p&gt;总的来说，只是形式上去模仿REST，自己搞了一套私有协议。&lt;/p&gt;
+
+&lt;h4 id=&quot;ebay&quot;&gt;Ebay&lt;/h4&gt;
+
+&lt;p&gt;&lt;strong&gt;请求消息&lt;/strong&gt;&lt;/p&gt;
+
+&lt;p&gt;采用xml作为承载，类似于SOAP，不过去除SOAP消息的封装和包头，同时在请求中附加了认证和警告级别等附加信息。&lt;/p&gt;
+
+&lt;p&gt;&lt;strong&gt;消息返回&lt;/strong&gt;&lt;/p&gt;
+
+&lt;p&gt;类似于SOAP消息，不过删除了SOAP的封装和包头，同时在返回结构中增加了消息处理结果以及版本等附加信息。&lt;/p&gt;
+
+&lt;p&gt;这个很类似于当前Axis2框架的做法，将SOAP精简，同时根据自身需求丰富了安全，事务等协议内容。&lt;/p&gt;
+
+&lt;h4 id=&quot;yahoo-maps&quot;&gt;Yahoo Maps&lt;/h4&gt;
+
+&lt;p&gt;&lt;strong&gt;请求消息&lt;/strong&gt;&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;http://local.yahooapis.com/MapsService/V1/geocode?appid=YahooDemo&amp;amp;street=701+First+Ave&amp;amp;city=Sunnyvale&amp;amp;state=CA 采用REST推荐的方式，URI+Parameters。
+&lt;/code&gt;&lt;/pre&gt;
+&lt;/div&gt;
+
+&lt;p&gt;&lt;strong&gt;返回消息&lt;/strong&gt;&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;cp&quot;&gt;&amp;lt;?xml version=&quot;1.0&quot; encoding=&quot;UTF-8&quot;?&amp;gt;&lt;/span&gt;
+&lt;span class=&quot;nt&quot;&gt;&amp;lt;ResultSet&lt;/span&gt; &lt;span class=&quot;na&quot;&gt;xmlns:xsi=&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;&quot;http://www.w3.org/2001/XMLSchema-instance&quot;&lt;/span&gt;
+&lt;span class=&quot;na&quot;&gt;xmlns=&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;&quot;urn:yahoo:maps&quot;&lt;/span&gt;
+&lt;span class=&quot;na&quot;&gt;xsi:schemaLocation=&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;&quot;urn:yahoo:maps http://local.yahooapis.com/MapsService/V1/GeocodeResponse.xsd&quot;&lt;/span&gt;&lt;span class=&quot;nt&quot;&gt;&amp;gt;&lt;/span&gt;
+ &lt;span class=&quot;nt&quot;&gt;&amp;lt;Result&lt;/span&gt; &lt;span class=&quot;na&quot;&gt;precision=&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;&quot;address&quot;&lt;/span&gt;&lt;span class=&quot;nt&quot;&gt;&amp;gt;&lt;/span&gt;
+    &lt;span class=&quot;nt&quot;&gt;&amp;lt;Latitude&amp;gt;&lt;/span&gt;37.416384&lt;span class=&quot;nt&quot;&gt;&amp;lt;/Latitude&amp;gt;&lt;/span&gt;
+    &lt;span class=&quot;nt&quot;&gt;&amp;lt;Longitude&amp;gt;&lt;/span&gt;-122.024853&lt;span class=&quot;nt&quot;&gt;&amp;lt;/Longitude&amp;gt;&lt;/span&gt;
+    &lt;span class=&quot;nt&quot;&gt;&amp;lt;Address&amp;gt;&lt;/span&gt;701 FIRST AVE&lt;span class=&quot;nt&quot;&gt;&amp;lt;/Address&amp;gt;&lt;/span&gt;
+    &lt;span class=&quot;nt&quot;&gt;&amp;lt;City&amp;gt;&lt;/span&gt;SUNNYVALE&lt;span class=&quot;nt&quot;&gt;&amp;lt;/City&amp;gt;&lt;/span&gt;
+    &lt;span class=&quot;nt&quot;&gt;&amp;lt;State&amp;gt;&lt;/span&gt;CA&lt;span class=&quot;nt&quot;&gt;&amp;lt;/State&amp;gt;&lt;/span&gt;
+    &lt;span class=&quot;nt&quot;&gt;&amp;lt;Zip&amp;gt;&lt;/span&gt;94089-1019&lt;span class=&quot;nt&quot;&gt;&amp;lt;/Zip&amp;gt;&lt;/span&gt;
+    &lt;span class=&quot;nt&quot;&gt;&amp;lt;Country&amp;gt;&lt;/span&gt;US&lt;span class=&quot;nt&quot;&gt;&amp;lt;/Country&amp;gt;&lt;/span&gt;
+ &lt;span class=&quot;nt&quot;&gt;&amp;lt;/Result&amp;gt;&lt;/span&gt;
+&lt;span class=&quot;nt&quot;&gt;&amp;lt;/ResultSet&amp;gt;&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;
+&lt;/div&gt;
+
+&lt;p&gt;SOAP的精简xml返回，其他信息，例如出错码等信息由Http协议头来承载。&lt;/p&gt;
+
+&lt;h4 id=&quot;youtube&quot;&gt;YouTube&lt;/h4&gt;
+
+&lt;p&gt;&lt;strong&gt;请求消息&lt;/strong&gt;&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;http://www.youtube.com/api2_rest?method=youtube.users.get_profile&amp;amp;dev_id=YOUR_DEV_ID&amp;amp;user=YOUTUBE_USER_NAME 可以看到对于资源操作的URI定义也是参数的一部分。
+&lt;/code&gt;&lt;/pre&gt;
+&lt;/div&gt;
+
+&lt;p&gt;&lt;strong&gt;返回消息&lt;/strong&gt;&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;cp&quot;&gt;&amp;lt;?xml version=&quot;1.0&quot; encoding=&quot;utf-8&quot;?&amp;gt;&lt;/span&gt;
+&lt;span class=&quot;nt&quot;&gt;&amp;lt;ut_response&lt;/span&gt; &lt;span class=&quot;na&quot;&gt;status=&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;&quot;ok&quot;&lt;/span&gt;&lt;span class=&quot;nt&quot;&gt;&amp;gt;&lt;/span&gt;
+    &lt;span class=&quot;nt&quot;&gt;&amp;lt;user_profile&amp;gt;&lt;/span&gt;
+        &lt;span class=&quot;nt&quot;&gt;&amp;lt;first_name&amp;gt;&lt;/span&gt;YouTube&lt;span class=&quot;nt&quot;&gt;&amp;lt;/first_name&amp;gt;&lt;/span&gt;
+        &lt;span class=&quot;nt&quot;&gt;&amp;lt;last_name&amp;gt;&lt;/span&gt;User&lt;span class=&quot;nt&quot;&gt;&amp;lt;/last_name&amp;gt;&lt;/span&gt;
+        &lt;span class=&quot;nt&quot;&gt;&amp;lt;about_me&amp;gt;&lt;/span&gt;YouTube rocks!!&lt;span class=&quot;nt&quot;&gt;&amp;lt;/about_me&amp;gt;&lt;/span&gt;
+        &lt;span class=&quot;nt&quot;&gt;&amp;lt;age&amp;gt;&lt;/span&gt;30&lt;span class=&quot;nt&quot;&gt;&amp;lt;/age&amp;gt;&lt;/span&gt;
+        &lt;span class=&quot;nt&quot;&gt;&amp;lt;video_upload_count&amp;gt;&lt;/span&gt;7&lt;span class=&quot;nt&quot;&gt;&amp;lt;/video_upload_count&amp;gt;&lt;/span&gt;
+    &lt;span class=&quot;nt&quot;&gt;&amp;lt;/user_profile&amp;gt;&lt;/span&gt;
+&lt;span class=&quot;nt&quot;&gt;&amp;lt;/ut_response&amp;gt;&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;
+&lt;/div&gt;
+
+&lt;p&gt;自定义的类SOAP消息。&lt;/p&gt;
+
+&lt;h4 id=&quot;amazon&quot;&gt;Amazon&lt;/h4&gt;
+
+&lt;p&gt;&lt;strong&gt;请求消息&lt;/strong&gt;&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;https://Amazon FPS web service end point/?AWSAccessKeyId=Your AWSAccessKeyId
+&amp;amp;Timestamp=[Current timestamp]
+&amp;amp;Signature=[Signature calculated from hash of Action and Timestamp]
+&amp;amp;SignatureVersion=[Signature calculated from hash of Action and Timestamp]
+&amp;amp;Version=[Version of the WSDL specified in YYYY-MM-DD format] &amp;amp;Action=[Name of the API]&amp;amp;parameter1=[Value of the API parameter1] &amp;amp;parameter2=[Value of the API parameter2]
+&amp;amp;...[API parameters and their values]
+&lt;/code&gt;&lt;/pre&gt;
+&lt;/div&gt;
+
+&lt;p&gt;&lt;strong&gt;返回消息&lt;/strong&gt;&lt;/p&gt;
+
+&lt;p&gt;类似于SOAP的自有协议，消息体中包含了消息状态等附加信息。&lt;/p&gt;
+
+&lt;h3 id=&quot;总结&quot;&gt;总结&lt;/h3&gt;
+
+&lt;p&gt;看了上面那么多网站的设计，总结一下主要有这么几种设计方式。&lt;/p&gt;
+
+&lt;p&gt;&lt;strong&gt;请求消息设计&lt;/strong&gt;&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;
+    &lt;p&gt;基本符合REST标准方式：资源URI定义（资源．操作）+参数。这类设计如果滥用get去处理其他类型的操作，那么和2无异。&lt;/p&gt;
+  &lt;/li&gt;
+  &lt;li&gt;
+    &lt;p&gt;REST风格非REST思想：资源URI定义+参数（包含操作方法名）。其实就是RPC的REST跟风。&lt;/p&gt;
+  &lt;/li&gt;
+  &lt;li&gt;
+    &lt;p&gt;类似于SOAP消息，自定义协议，以xml作为承载。（可扩展，例如鉴权，访问控制等），不过那就好比自己定义了一套SOAP和SOAP extends。大型的有实力的网站有的采取此种做法。&lt;/p&gt;
+  &lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;&lt;strong&gt;响应消息设计&lt;/strong&gt;&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;
+    &lt;p&gt;REST标准方式，将Resource State传输返回给客户端，Http消息作为应用协议而非传输协议&lt;/p&gt;
+  &lt;/li&gt;
+  &lt;li&gt;
+    &lt;p&gt;以XML作为消息承载体，Http作为消息传输协议，处理状态自包含。&lt;/p&gt;
+  &lt;/li&gt;
+  &lt;li&gt;
+    &lt;p&gt;自定义消息格式，类似于SOAP，提供可扩展部分。&lt;/p&gt;
+  &lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;作为遵循REST的理念来看我的选择是响应1和请求1的设计。&lt;/p&gt;
+
+&lt;h3 id=&quot;rest和asf的集成&quot;&gt;REST和ASF的集成&lt;/h3&gt;
+
+&lt;p&gt;ASF要集成REST就现在来看有两种比较合适的方法。&lt;/p&gt;
+
+&lt;p&gt;一．就是采用Axis2的REST实现，这种方式的好处就是开发周期短，容易集成，但是请求和响应的格式无法改变，资源URI设计受限，Axis2的REST其实就是将SOAP消息精简，请求的时候删除了SOAP的头，响应的时候仅仅返回资源信息，如果提供xsd就可以被各种客户端所解析。并非真正的REST。&lt;/p&gt;
+
+&lt;p&gt;二．就是采用Restlet开源框架，将Restlet开源框架集成到ASF中，由于Restlet本身就是可内嵌的应用框架，因此集成不成问题，同时Restlet框架只是API结构框架，因此实现和定义完全分开，集成Restlet以后可以自己实现其中的解析引擎也可以采用默认提供的引擎，同时对于内嵌Jetty等多种开源项目的支持，将更多优势融入到了Rest中。看了一下国内也有很多朋友已经关注Restlet开源项目，看了它的架构设计，个人觉得还是比较灵活和紧凑的。&lt;/p&gt;
+
+&lt;h3 id=&quot;题外话&quot;&gt;题外话&lt;/h3&gt;
+
+&lt;p&gt;在写这篇文章以前写了一篇调研报告群发给各个架构师们参考，期待反馈。下午正好和我们的首席架构师聊了一会儿。其实我和他的感觉是一样的，REST是否真的在我们现有的服务框架中需要集成，理解了REST的思想再去看应用场景，那么可以发现如果要完全遵循REST的设计理念来设计接口的话，那么强要去改变现有已经存在的或者还未开发的接口就会落入为了技术而技术，为了潮流而跟风的近地。当然并不否认REST的好，其实我们兄弟公司的一些业务场景有部分的接口十分合适这类设计，面向资源，高效，简洁，易用都能够体现出它的价值。我们将会和我们的兄弟公司合作，也会参考他们的设计理念，在参考当前各个网站的实现情况下，部分的采用这类形式的发布，提供给第三方的ISV，无疑是我现在把REST融入到ASF中最好的理由。&lt;/p&gt;
+
+&lt;p&gt;有了需求去做才不会陷入为了技术而技术，毕竟技术是由商业价值驱动的，同样社会上充斥着各种技术的鼓吹，如果稍不留神就会陷入跟风的潮流中。&lt;/p&gt;
+</description>
+        <pubDate>Tue, 12 Apr 2016 00:00:00 +0800</pubDate>
+        <link>http://localhost:4000/2016/04/12/WebService%E7%9A%84%E4%B8%A4%E7%A7%8D%E6%96%B9%E5%BC%8FSOAP%E5%92%8CREST%E6%AF%94%E8%BE%83/</link>
+        <guid isPermaLink="true">http://localhost:4000/2016/04/12/WebService%E7%9A%84%E4%B8%A4%E7%A7%8D%E6%96%B9%E5%BC%8FSOAP%E5%92%8CREST%E6%AF%94%E8%BE%83/</guid>
+        
+        <category>Francis 杂谈</category>
+        
+        <category>接口开发</category>
+        
+        
+      </item>
+    
+      <item>
+        <title>递归算法之n阶矩阵行列式求解</title>
+        <description>&lt;blockquote&gt;
+  &lt;p&gt;设计算法时使用递归的思想是一个程序员的基本素质，递归可以把一个很庞大的问题转化为规模缩小了的同类问题的子问题，通过这一思想，我们编程时运用递归可以使用很少的代码来处理很大的问题。这篇文章将会讲到递归算法的运用。&lt;/p&gt;
+&lt;/blockquote&gt;
+
+&lt;p&gt;在数学中，很多数学函数都是由一个公式来表达的，比如 &lt;em&gt;f(x) = 100x&lt;/em&gt;; 这个公式可以让我们把长度米转换成长度厘米。 有了这个公式，在程序中敲出一行代码，写出一个函数（function）来计算实在是太简单方便了，就像这样。&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;int convert(int m){
+    return 100*m;
+}
+&lt;/code&gt;&lt;/pre&gt;
+&lt;/div&gt;
+
+&lt;p&gt;我们就写好了一个函数来进行米到厘米的单位换算。&lt;/p&gt;
+
+&lt;p&gt;但是有的时候，数学函数会以不太标准的形式来定义，比如这个函数，他满足 &lt;em&gt;f(0)=0&lt;/em&gt;而且 &lt;em&gt;f(x) = 2f(x-1)+x&lt;/em&gt;; 从这个函数定义我们可以得出 &lt;em&gt;f(1)=1&lt;/em&gt;;&lt;em&gt;f(2)=3&lt;/em&gt;;等等。当一个函数用他自己来定义时就称为这个函数是递归的。&lt;/p&gt;
+
+&lt;p&gt;通俗地讲，就是从前有个山，山里有个庙，庙里有个老和尚再给小和尚讲故事，讲的是：从前有个山，山里有个庙，庙里有个老和尚再给小和尚讲故事。。。。这就是递归。&lt;/p&gt;
+
+&lt;p&gt;好了说了这么多你们肯定还是一头雾水，现在来实践一下。&lt;/p&gt;
+
+&lt;h3 id=&quot;递归求阶乘&quot;&gt;递归求阶乘&lt;/h3&gt;
+
+&lt;p&gt;刚开始学编程的同学一定会写求阶乘的函数，使用for循环或者while循环都可以，但是递归却完全用不上这两个循环。&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;public static int factorial(int a){
+
+    if (a==0 || a==1){
+        return 1;
+    }
+
+    return a*factorial(a-1);
+}
+&lt;/code&gt;&lt;/pre&gt;
+&lt;/div&gt;
+
+&lt;p&gt;上面的代码就是递归求阶乘的方法，a是需要传入的参数，比如我们要求5的阶乘就传入5这样factorial函数最终的返回值为120；&lt;/p&gt;
+
+&lt;p&gt;分析这段代码，他的第3行到第五行处理了 &lt;strong&gt;基准情况（Base Case）&lt;/strong&gt;，在这个情况下，函数的值可以直接算出而不用求出递归。就像上文提到的函数&lt;em&gt;f(x) = 2f(x-1)+x&lt;/em&gt;;如果没有f(0)=0这个事实在数学上没有意义一样。 再编程中，如果没有基准情况也是无意义的。第7行执行的是递归调用。&lt;/p&gt;
+
+&lt;p&gt;所以所，设计递归算法，需要包含以下两个基本法则：&lt;/p&gt;
+
+&lt;p&gt;&lt;strong&gt;1、基准情形（Base Case），必须总要有某些基准的清醒，在这个情形中，不执行递归就能求解。&lt;/strong&gt;&lt;/p&gt;
+
+&lt;p&gt;&lt;strong&gt;2、不断推进（Making Progress），对于需要递归求解的情形，递归调用必须总能够朝着一个基准情形推进。这样的话，不断推进到基准情形，到达基准情形的时候递归才会推出，得到返回值。&lt;/strong&gt;&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;http://source.francissoung.com//2016%2F03%2F30%2Fn%E9%98%B6%E7%9F%A9%E9%98%B5%E8%A1%8C%E5%88%97%E5%BC%8F%E6%B1%82%E8%A7%A31.jpg&quot; alt=&quot;&quot; /&gt;&lt;/p&gt;
+
+&lt;h3 id=&quot;n阶矩阵行列式的求解&quot;&gt;n阶矩阵行列式的求解&lt;/h3&gt;
+
+&lt;p&gt;有了刚在知识的铺垫，现在我们可以动手写一个程序来用递归计算n阶矩阵的行列式了。&lt;/p&gt;
+
+&lt;p&gt;&lt;strong&gt;首先来看下二阶矩阵的求法&lt;/strong&gt;：&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;http://source.francissoung.com/2016%2F03%2F30%2Fn%E9%98%B6%E7%9F%A9%E9%98%B5%E8%A1%8C%E5%88%97%E5%BC%8F%E6%B1%82%E8%A7%A32.png&quot; alt=&quot;&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;也就是说2×2矩阵的元素交叉相乘再想减即可求出行列式。&lt;/p&gt;
+
+&lt;p&gt;&lt;strong&gt;接下来是3阶矩阵&lt;/strong&gt;：&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;http://source.francissoung.com/2016%2F03%2F30%2Fn%E9%98%B6%E7%9F%A9%E9%98%B5%E8%A1%8C%E5%88%97%E5%BC%8F%E6%B1%82%E8%A7%A33.png&quot; alt=&quot;&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;3×3矩阵求解中，选择任意行或者列，在那一行/列中,移除那个元素所在的行和列比如选择a11，则移除第一行和第一列，这样矩阵就变成了2×2的，再按照刚才的方法求2×2矩阵的行列式即可。之后整个行或列的3个元素进行此类运算后相加就是3×3的行列式。&lt;/p&gt;
+
+&lt;p&gt;&lt;strong&gt;n x n矩阵&lt;/strong&gt;：&lt;/p&gt;
+
+&lt;p&gt;n阶矩阵就和3阶矩阵求解的方法一样了，使用3×3求解的方法，比如4阶矩阵，将4阶消除成3阶，然后再变成2阶来算。但是矩阵每上升一个维度，计算量就会扩大很多。&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;http://source.francissoung.com/2016%2F03%2F30%2Fn%E9%98%B6%E7%9F%A9%E9%98%B5%E8%A1%8C%E5%88%97%E5%BC%8F%E6%B1%82%E8%A7%A34.gif&quot; alt=&quot;&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;知道了n阶矩阵行列式的计算思路后，就可以开始编写算法了。&lt;/p&gt;
+
+&lt;p&gt;&lt;strong&gt;首先是数据结构设计&lt;/strong&gt;，我们需要设计一个矩阵类来提供便利，这个类有两个成员，一个二维数组，用来储存矩阵，一个整数，来储存矩阵的行数或列数（行列式必须是方矩阵才可以求解所以行列无所谓）。&lt;/p&gt;
+
+&lt;p&gt;以下是整个Matrix类的设计：&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;static class Matrix{
+
+    private int rowNum=0;
+
+    private int[][] array;
+
+    //Constructor
+    public Matrix(int rowNum){
+        this.rowNum = rowNum;
+        array = new int[rowNum][rowNum];
+    }
+
+    public Matrix(int[][] array){
+        this.array = array;
+        this.rowNum = array.length;
+    }
+
+    int counter = 0; //For add Element
+
+    public void addElement(int a){
+        array[(counter)/rowNum][counter%rowNum] = a;
+        counter++;
+    }
+
+    //Print the instance itself
+    public void printMat(){
+        for (int i=0;i &amp;lt; rowNum ;i++){
+            for (int j=0;j &amp;lt; rowNum ;j++){
+                 System.out.print(array[i][j]+\t;);
+            }
+            System.out.println();
+        }
+    }
+
+    //Setter and Getter
+    public int getRowNum() {
+        return rowNum;
+    }
+
+    public int[][] getArray() {
+        return array;
+    }
+
+    public void setArray(int[][] array) {
+        this.array = array;
+    }
+
+}
+&lt;/code&gt;&lt;/pre&gt;
+&lt;/div&gt;
+
+&lt;p&gt;Matrix类中有两个构造方法：传入整数a会初始化一个axa大小的空矩阵，传入一个二维数组的话即可根据二维初始化一个Matrix对象。&lt;/p&gt;
+
+&lt;p&gt;Matrix类中有一个方法比较特殊：addElement方法，通过不断调用这个函数即可向一个Matrix实例进行有顺序的负值，第一次调用则会更改第第一行第一列位置上的值，第二次调用则会更改第一行第二列上的值，以此类推。&lt;/p&gt;
+
+&lt;p&gt;接下来就是设计一个MatrixCalculator类的，这个类中的一个成员方法可以求出行列式，我命名他为getDet(); 在计算行列式的时候需要移除元素所在的行和列，生成一个减小了一个维度的矩阵，我们需要编写一个方法来完成这个操作，我命名他为removeRowAndCol()；还有一个方法，由于相加的时候会产生符号的改变，所以需要写一个方法来计算矩阵中一个元素的cofactor，命名为getCofactor。&lt;/p&gt;
+
+&lt;p&gt;以下就是removeRowAndCol方法的代码：传入需要移除的行和列和一个Matrix对象，函数会返回消除了指定行和列的Matrix对象。&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;public static Matrix removeRowAndCol(int row,int col,Matrix mat){
+
+    int matRowNum = mat.getRowNum();
+    int[][] arr = mat.getArray();
+
+    Matrix matrix = new Matrix(matRowNum-1);
+
+    for (int i = 0;i &amp;lt; matRowNum; i++){
+        for (int j = 0 &amp;lt; matRowNum; j++){
+                if (i!=row &amp;amp;&amp;amp; j!=col) {
+                    matrix.addElement(arr[i][j]);
+                }
+        }
+    }
+
+    matrix.printMat();
+    return matrix;
+
+}
+&lt;/code&gt;&lt;/pre&gt;
+&lt;/div&gt;
+
+&lt;p&gt;以下是getCofactor方法：由于我的算法只会去遍历矩阵第一列来进行求解，所以得到Cofactor的代码就变得简单很多。&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;public static int getCofactor(int colNum){
+    if (colNum%2 == 0){
+        return 1;
+    }else {
+        return -1;
+    }
+}
+&lt;/code&gt;&lt;/pre&gt;
+&lt;/div&gt;
+
+&lt;p&gt;接下来就是核心的递归求解行列式的算法了，先理一下思路，&lt;strong&gt;递归算法的两个要素：基准情形，不断推进&lt;/strong&gt;。&lt;/p&gt;
+
+&lt;p&gt;对于n阶矩阵什么是基准情形呢？就是矩阵被降为2×2维度的时候，直接返回交叉相乘的差即可，不断推进，如果是一个4阶矩阵，算法会先把4将为3×3矩阵，然后3×3再拆成3个2×2矩阵来达到基准情形来算出答案，就和我们手算行列式时用到的方法一样，手算时候也遵循这一算法。&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;public static int getDet(Matrix targetMatrix){
+    //Base (Finally reduced to 2 x 2 Matrix)
+    if (targetMatrix.rowNum == 2){
+        int[][] arr = targetMatrix.getArray();
+        // a*d - b*c
+        return arr[0][0]*arr[1][1] - arr[0][1]*arr[1][0];
+    }
+
+    //MARK- Recursion: to reduce dimension
+    int det = 0;
+    int colNum = targetMatrix.rowNum;
+    for (int i = 0; &amp;lt; colNum;i++){
+        det+= (targetMatrix.getArray()[i][0])*getCofactor(i)*getDet(removeRowAndCol(i,0,targetMatrix));
+    }
+
+    return det;
+}
+&lt;/code&gt;&lt;/pre&gt;
+&lt;/div&gt;
+
+&lt;p&gt;只有不到20行代码，但是却可以解决nxn的矩阵，是不是很神奇，这就是递归的优势，把一个很庞大的问题转化为规模缩小了的同类问题的子问题来求解。n阶矩阵最后被降为若干个2×2矩阵。&lt;/p&gt;
+
+&lt;p&gt;加上适当的输出语句，来求解一个3阶矩阵行列式试一下：&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;2   1    2
+-1   5   21
+13 -1  -17
+
+Element: 2
+Cofactor: 1
+Removing Row 0 Col 0
+A 2 x 2 Matrix is initialized
+5 21
+-1 -17
+END State Reached
+Det: -64
+
+Element: -1
+Cofactor: -1
+Removing Row 1 Col 0
+A 2 x 2 Matrix is initialized
+1 2
+-1 -17
+END State Reached
+Det: -15
+
+Element: 13
+Cofactor: 1
+Removing Row 2 Col 0
+A 2 x 2 Matrix is initialized
+1 2
+5 21
+END State Reached
+Det: 11
+Result: 0
+&lt;/code&gt;&lt;/pre&gt;
+&lt;/div&gt;
+
+&lt;p&gt;但是有一个问题需要注意，就是这个算法的复杂度。&lt;/p&gt;
+
+&lt;h3 id=&quot;算法复杂度&quot;&gt;算法复杂度&lt;/h3&gt;
+
+&lt;p&gt;这个算法的复杂度为O(n!), 这意味着他的运行速度很慢，随着问题规模的增长，时间会大幅度增长。在我的电脑上，计算3×3到7×7内规模的矩阵，电脑都可以秒算出来，但是如果是一个10×10的矩阵，电脑需要54秒钟，到了11×11时间将会变得更长，下图是这个算法随着问题规模增长对运行时产生影响的曲线。&lt;/p&gt;
+
+&lt;p&gt;可以看出7×7矩阵需要递归517次，到了10×10需要大约260万次递归运算才能得到结果。可见问题规模增长后时间的开销是十分巨大的。&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;http://source.francissoung.com/2016%2F03%2F30%2Fn%E9%98%B6%E7%9F%A9%E9%98%B5%E8%A1%8C%E5%88%97%E5%BC%8F%E6%B1%82%E8%A7%A35.png&quot; alt=&quot;&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;原文：&lt;a href=&quot;http://miketech.it/recursion_algorithm/&quot;&gt;http://miketech.it/recursion_algorithm/&lt;/a&gt;&lt;/p&gt;
+</description>
+        <pubDate>Thu, 31 Mar 2016 00:00:00 +0800</pubDate>
+        <link>http://localhost:4000/2016/03/31/%E9%80%92%E5%BD%92%E7%AE%97%E6%B3%95%E4%B9%8Bn%E9%98%B6%E7%9F%A9%E9%98%B5%E8%A1%8C%E5%88%97%E5%BC%8F%E6%B1%82%E8%A7%A3/</link>
+        <guid isPermaLink="true">http://localhost:4000/2016/03/31/%E9%80%92%E5%BD%92%E7%AE%97%E6%B3%95%E4%B9%8Bn%E9%98%B6%E7%9F%A9%E9%98%B5%E8%A1%8C%E5%88%97%E5%BC%8F%E6%B1%82%E8%A7%A3/</guid>
+        
+        <category>算法</category>
+        
+        <category>编程</category>
+        
+        
+      </item>
+    
+      <item>
+        <title>似水年华之回炉再造</title>
+        <description>&lt;p&gt;在犹豫了两年之后，报考了北大的成人教育。曾经的自己非常的迷茫，不知道自己想要什么，只是过着随遇而安的生活。在跌跌撞撞的北漂生活中对自己的未来有了新的认识，也许这种认识才使我重新定位自己。&lt;/p&gt;
+
+&lt;p&gt;经过全国统一考试之后，2016年伊始，开始了三年的北大学习之旅。&lt;/p&gt;
+
+&lt;p&gt;提到北大，大家第一印象便是中国最一流的高等学府。不知道为什么，我并为此而特别兴奋，也许只是为了学位？我相信很多人都会这样想。&lt;/p&gt;
+
+&lt;p&gt;当进入北大之后，没有那种大学自由自在的感觉，反而多了更大的压力，管理严格和要求高是一方面，更多的是经过几年的社会，自己曾经熟知的知识已经忘得差不多了。不过我相信这些都是可以改善的。&lt;/p&gt;
+
+&lt;p&gt;今天提前下课了，来到了大名鼎鼎的未名湖畔。很多游人游览，我想大家也是慕名而来，感受百年老校的文化和艺术气息。我对于北大不是很熟，虽现在是北大的一员，但总是有区别的。&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;http://source.francissoung.com/2016%2F03%2F27%2F%E6%9C%AA%E5%90%8D%E6%B9%96%E7%95%94.jpg&quot; alt=&quot;&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;坐在未名湖畔的休息椅上，呼吸到了春天的气息，看到湖对面的柳树想起了一首中学时期学过的诗–【碧玉妆成一树高 ，万条垂下绿丝绦。不知细叶谁裁出 ，二月春风似剪刀。】不过现在是三月，可依然有些凉（前几日的温度让本人去除了不少衣物）。&lt;/p&gt;
+
+&lt;p&gt;开始羡慕在北大读书的同学，能进入北大的同学多半都是全国的精英吧（较真的同学请掠过）。学术氛围和文化气息确实能影响一个人求知欲望。我只能奋起直追了。&lt;/p&gt;
+
+&lt;p&gt;也许每个人对我报考北大成人教育态度不一，我也不去在意他人的看法了，对我来说，学位固然重要，但更重要的是这段旅程。我相信不久的将来这趟文化之旅给我带来的不仅仅是那一张薄薄的证书。&lt;/p&gt;
+
+&lt;p&gt;因为住的远，每天5点就起床奔向北大，8点开始上课，今后的周末基本都在这里度过了。&lt;/p&gt;
+
+&lt;p&gt;周末对于程序员来说是难得的休息时间，牺牲了周末对本来就紧张的生活来说添了更多的劳累。我不再去追究它到底值不值得，过去的犹豫不决让自己失去了很多了，不能再犯如此错误了。&lt;/p&gt;
+
+&lt;p&gt;我相信自己的选择，如同这春意盎然的时节。&lt;/p&gt;
+
+&lt;p&gt;继续奋进，在这条路上！&lt;/p&gt;
+</description>
+        <pubDate>Sun, 27 Mar 2016 00:00:00 +0800</pubDate>
+        <link>http://localhost:4000/2016/03/27/%E4%BC%BC%E6%B0%B4%E5%B9%B4%E5%8D%8E%E4%B9%8B%E5%9B%9E%E7%82%89%E5%86%8D%E9%80%A0/</link>
+        <guid isPermaLink="true">http://localhost:4000/2016/03/27/%E4%BC%BC%E6%B0%B4%E5%B9%B4%E5%8D%8E%E4%B9%8B%E5%9B%9E%E7%82%89%E5%86%8D%E9%80%A0/</guid>
+        
+        <category>Francis 简单生活</category>
+        
+        
+      </item>
+    
+      <item>
+        <title>如何评价『黑客与画家』</title>
+        <description>&lt;p&gt;一本好的书，让我们收获的不单单是某种技巧，或者某种方法论， &lt;strong&gt;他教给我们的是一种严密的思维方式，是一种学会把自己的眼光放得更加长远的决策习惯，他促使我们养成独立思考的习惯。&lt;/strong&gt; 他没有送给我们一条大鱼，却把捕捉大鱼的方法交给了我们， &lt;strong&gt;授人以鱼，不如授人以渔&lt;/strong&gt;。&lt;/p&gt;
+
+&lt;p&gt;我一直觉得把一个我们所熟知的很普通的问题讲的非常透彻而且非常清楚是一种相当了不起的能力， 保罗·格雷尔姆 不仅把问题讲的非常透彻，而且还非常有趣， 让我们在读的时候感觉趣味盎然，这一点是非常不容易的。&lt;/p&gt;
+
+&lt;p&gt;很多的互联网从业者想必早就听说过这本书，而且大部分人应该都已经阅读过这本书了， 所以我就简单的从其他的角度来谈一下我读完本书的一些感想，希望对大家有所帮助。&lt;/p&gt;
+
+&lt;p&gt;在阅读「为什么书呆子不受欢迎」这章时，我想到了这么一句话，&lt;strong&gt;「你的时间在哪里，你的成就就在哪里」&lt;/strong&gt;。 生活中的我们，总是喜欢羡慕那些成功人士，我们总觉得那些成功人士与我们普通人不一样， 他们必然懂得某种通往成功的诀窍，他们生下来就与周围的人们有所不同。 我们也总是希望能从这些成功人士那里获得某些珍贵的建议，获得那些能使人最终功成名就的万用妙方。 在武侠小说里面， &lt;strong&gt;渴望成为武林高手的人，都希望得到一本有着盖世神功的武林秘籍&lt;/strong&gt;。 因为这秘籍一旦得手，只要依葫芦画瓢，就可大功告成。&lt;/p&gt;
+
+&lt;p&gt;但是世事又怎会如此简单，也永远不会有这样或者那样的武林秘诀。 &lt;strong&gt;所谓的成功人士不过是把自己的时间投入到那些他们感兴趣的领域里面罢了&lt;/strong&gt;。 其实， &lt;strong&gt;我们每一个人也许都是我们所投入时间的那个领域的成功人士&lt;/strong&gt;。 有的同学，可能在学校里没有把时间投入学习中，但是呢，投入了很多的时间在游戏领域，每天花费大量的时间去玩游戏， 看游戏讲解视频，研究游戏的战略，思考游戏的玩法，在这个游戏里面，他就是王者； 有的人呢，可能喜欢计算机，他喜欢与程序打交道，他希望了解计算机是如何思考的，于是最终他就成了黑客。&lt;/p&gt;
+
+&lt;p&gt;画家能够把画画的比我们更好，只是因为他把他的时间都投入到里面罢了，田径运动员跑的比我们更快， 同样只不过因为他把他的时间都投入到跑步里面罢了。 &lt;strong&gt;书呆子也并非不想让自己不受欢迎，他们只是更愿意把时间投入到让自己聪明上去罢了&lt;/strong&gt;。 我们每一个人，都可以自己去决定把自己的时间投入到哪个领域，我们所投入的时间最终也会成就我们。&lt;/p&gt;
+
+&lt;p&gt;在阅读本书的其他章节的时候，我更加深刻的发觉，黑客们，其实与我们并没有多大的不同， &lt;strong&gt;他们只是比我们普通人更加崇尚分享、开放和民主，他们对任何被禁止的东西都怀有特别强烈的好奇心，他们喜欢去思考那些似乎不应该被思考的问题，他们相信计算机将会深刻的改变人们的生活&lt;/strong&gt;。&lt;/p&gt;
+
+&lt;p&gt;虽然这是一本讲述黑客的书，不过个人觉得每个人都应该看看。 如同译者阮一峰所言：未来的人类生活不仅是人与人的互动，而且更多的将是人与计算机的互动。 想要把握这个时代，就必须理解计算机。 理解计算机的关键，则是要理解计算机背后的人。 表面上这是一个机器的时代，但是实际上机器的设计者决定了我们的时代。 &lt;strong&gt;程序员的审美决定了你看到的软件界面，程序员的爱好决定了你有什么样的软件可以使用&lt;/strong&gt;。&lt;/p&gt;
+
+</description>
+        <pubDate>Thu, 24 Mar 2016 00:00:00 +0800</pubDate>
+        <link>http://localhost:4000/2016/03/24/%E5%A6%82%E4%BD%95%E8%AF%84%E4%BB%B7%E9%BB%91%E5%AE%A2%E4%B8%8E%E7%94%BB%E5%AE%B6/</link>
+        <guid isPermaLink="true">http://localhost:4000/2016/03/24/%E5%A6%82%E4%BD%95%E8%AF%84%E4%BB%B7%E9%BB%91%E5%AE%A2%E4%B8%8E%E7%94%BB%E5%AE%B6/</guid>
+        
+        <category>Francis 杂谈</category>
+        
+        <category>读书笔记</category>
+        
+        
+      </item>
+    
+      <item>
+        <title>[福利]如何下载Tumblr的视频</title>
+        <description>&lt;p&gt;众所周知，Tumblr是Yahoo旗下的轻博客，可以让使用者写日志，也能上传视频，那如果你把视频上传后想要下载下来怎么办呢？右键好像无法另存，不用担心，现在透过线上服务也能将Tumblr上的视频轻松下载下来保存，以免Tumblr服务停止运营后，视频不知道怎么备份下来！&lt;/p&gt;
+
+&lt;p&gt;透过国外的&lt;a href=&quot;http://www.tubeoffline.com/&quot;&gt;TubeOffline&lt;/a&gt;，只要将Tumblr的单篇文章网址(内含视频的)粘贴上去，就能轻松下载Tumblr视频并存成mp4格式，完全不需要任何软件，只要透过浏览器就可以轻松抓Tumblr视频。通常在抓视频比较不建议去安装软件，毕竟抓视频不一定是常常会用到，安装软件又会占用电脑资源，实在是不划算。透过线上服务可以轻松获取就利用线上服务吧！&lt;/p&gt;
+
+&lt;p&gt;透过TubeOffline的线上服务只是帮助你从Tumblr视频页面的源代码中找出实际影片的地址而已，毕竟现在有些机制或者是要加速网站速度，都不会使用传统的一个完整的视频网址让大家可以直接抓，都会透过程序分割或者是隐藏，一般使用者并不一定能看懂源代码，但透过TubeOffline就可以轻松抓取。&lt;/p&gt;
+
+&lt;h2&gt;&lt;img src=&quot;http://source.francissoung.com/2016%2F03%2F21%2F%E5%A6%82%E4%BD%95%E4%B8%8B%E8%BD%BDTumblr%E4%B8%8A%E7%9A%84%E8%A7%86%E9%A2%911.png&quot; alt=&quot;如何下载Tumblr的视频&quot; /&gt;&lt;/h2&gt;
+
+&lt;p&gt;网站名称：TubeOffline&lt;/p&gt;
+
+&lt;p&gt;网站地址：&lt;a href=&quot;http://www.tubeoffline.com/download-tumblr-videos.php&quot;&gt;点这里&lt;/a&gt;&lt;/p&gt;
+
+&lt;hr /&gt;
+
+&lt;p&gt;第1步  依照TubeOffline官方提供的示例视频网址，你可以试试看将网址粘贴到「video URL」的输入框，并尝试点下﹝Get Video﹞就可以取得影片网址了！&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;http://source.francissoung.com/2016%2F03%2F21%2F%E5%A6%82%E4%BD%95%E4%B8%8B%E8%BD%BDTumblr%E7%9A%84%E8%A7%86%E9%A2%912.jpg&quot; alt=&quot;如何下载Tumblr的视频&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;第2步  接著只要点击﹝Download﹞就可以把Tumblr视频下载下来了！&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;http://source.francissoung.com/2016%2F03%2F21%2F%E5%A6%82%E4%BD%95%E4%B8%8B%E8%BD%BDTumblr%E7%9A%84%E8%A7%86%E9%A2%913.jpg&quot; alt=&quot;如何下载Tumblr的视频&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;快行动吧,福利已经奉上,拿出你的右手.&lt;/p&gt;
+</description>
+        <pubDate>Wed, 23 Mar 2016 00:00:00 +0800</pubDate>
+        <link>http://localhost:4000/2016/03/23/%E5%A6%82%E4%BD%95%E4%B8%8B%E8%BD%BDTumblr%E7%9A%84%E8%A7%86%E9%A2%91/</link>
+        <guid isPermaLink="true">http://localhost:4000/2016/03/23/%E5%A6%82%E4%BD%95%E4%B8%8B%E8%BD%BDTumblr%E7%9A%84%E8%A7%86%E9%A2%91/</guid>
+        
+        <category>Francis 杂谈</category>
+        
+        
+      </item>
+    
+      <item>
+        <title>如何减少接口响应时间</title>
+        <description>&lt;blockquote&gt;
+  &lt;p&gt;Premature optimization is the root of all evil.&lt;/p&gt;
+
+  &lt;p&gt;　 — Donald Knuth&lt;/p&gt;
+&lt;/blockquote&gt;
+
+&lt;p&gt;对于程序优化，我一直采取保守的态度，除非万不得已。但是随着业务的不断发展，程序越来越复杂，代码越写越多，优化似乎是终有一天会到来的事情。&lt;/p&gt;
+
+&lt;p&gt;那么对于一个典型的后台服务接口，我们可以从那些方面入手进行优化呢？&lt;/p&gt;
+
+&lt;h2 id=&quot;接口拆分&quot;&gt;接口拆分&lt;/h2&gt;
+
+&lt;h3 id=&quot;接口垂直拆分&quot;&gt;接口垂直拆分&lt;/h3&gt;
+
+&lt;p&gt;垂直拆分可以简单理解为微服务化，把一个大而复杂的服务拆分成多个相互独立，职能单一的服务，单独部署。 更细粒度拆分的好处是，能对某个具体的微服务进行特殊优化，以最大的投入产出比来解决整个服务的性能。 垂直拆分还有一个好处是，对于非必须的接口，可以很方便的进行降级处理，把坏影响隔离到核心逻辑外部。 最容易想到的优化办法是把某个对整体性能有决定性影响的微服务接口进行水平扩容。&lt;/p&gt;
+
+&lt;p&gt;注意: 拆分后必定会增加外部接口调用，多少会有些额外开销，但是对于有限几个调用，拆分的还是值得的。&lt;/p&gt;
+
+&lt;h3 id=&quot;接口水平拆分&quot;&gt;接口水平拆分&lt;/h3&gt;
+
+&lt;p&gt;这里说的水平拆分一定不是把一个接口部署更多份，因为这样只能解决接口的容量问题，但是不能减少接口的响应时间。 水平拆分可以简单理解成mapreduce模型，把整个计算逻辑或者数据平均分配到集群中的N个服务器去，然后由一台机器去并发调用并做结果合并。 理论上这种方式能把响应减少到1/N+合并+调用开销的时间。&lt;/p&gt;
+
+&lt;p&gt;注意： 一个问题需要考虑的是，如果并发调用的接口返回的数据量比较大，可能会对合并机器的网络负载和数据序列化(CPU)有一定影响。&lt;/p&gt;
+
+&lt;h2 id=&quot;缓存&quot;&gt;缓存&lt;/h2&gt;
+
+&lt;h3 id=&quot;接口缓存&quot;&gt;接口缓存&lt;/h3&gt;
+
+&lt;p&gt;一个有着复杂逻辑或者大量计算数据的接口，能对整个结果进行缓存再好不过了。缓存针对不同的场景会有多种策略，对于有大量并发请求的场景， 推荐一个方案：一种基于“哨兵”的分布式缓存设计，不会有损失第一个用户，也不会有定时更新缓存的额外开销。&lt;/p&gt;
+
+&lt;h3 id=&quot;本地缓存&quot;&gt;本地缓存&lt;/h3&gt;
+
+&lt;p&gt;本地缓存有两种场景，对于类似字典类型的数据，可以静态化后放入内存，定时去刷新或者采用通知机制去更新。&lt;/p&gt;
+
+&lt;p&gt;还有一种场景是用ThreadLocal缓存重复内部计算与重复的对象创建； 对于链路比较长或者循环比较深的接口，ThreadLocal减少重复计算和对象创建，从而降低RT和节约内存。&lt;/p&gt;
+
+&lt;p&gt;注意： 在有内部并发的地方使用ThreadLocal一定要注意不同线程间的数据同步。主线程的ThreadLocal数据和每个并发子线程的ThreadLocal数据要同步好。&lt;/p&gt;
+
+&lt;h2 id=&quot;内部优化&quot;&gt;内部优化&lt;/h2&gt;
+
+&lt;h3 id=&quot;非核心流程异步化&quot;&gt;非核心流程异步化&lt;/h3&gt;
+
+&lt;p&gt;类似于发消息，写日志，更新缓存等不会影响接口准确性的非核心流程，可以采用异步方式进行处理，不阻塞主计算逻辑处理。&lt;/p&gt;
+
+&lt;h3 id=&quot;内部并发&quot;&gt;内部并发&lt;/h3&gt;
+
+&lt;p&gt;如果进行水平拆分后，并发调用IO较大，可以考虑换成内部并发解决IO问题。如果内部并发涉及到每个线程更新同一个集合数据，不用忘了使用线程安全的集合。&lt;/p&gt;
+
+&lt;h2 id=&quot;总结&quot;&gt;总结&lt;/h2&gt;
+
+&lt;p&gt;优化一定不是一蹴而就的，整个优化过程是一个&lt;code class=&quot;highlighter-rouge&quot;&gt;统计--&amp;gt;方案--&amp;gt;验证&lt;/code&gt;的闭环，需要不断试错，不断挖掘，最终达到预期。&lt;/p&gt;
+</description>
+        <pubDate>Wed, 16 Mar 2016 00:00:00 +0800</pubDate>
+        <link>http://localhost:4000/2016/03/16/%E5%A6%82%E4%BD%95%E5%87%8F%E5%B0%91%E6%8E%A5%E5%8F%A3%E5%93%8D%E5%BA%94%E6%97%B6%E9%97%B4/</link>
+        <guid isPermaLink="true">http://localhost:4000/2016/03/16/%E5%A6%82%E4%BD%95%E5%87%8F%E5%B0%91%E6%8E%A5%E5%8F%A3%E5%93%8D%E5%BA%94%E6%97%B6%E9%97%B4/</guid>
+        
+        <category>Francis 杂谈</category>
+        
+        <category>编程</category>
+        
+        
+      </item>
+    
+      <item>
+        <title>PHP超时处理全面总结</title>
+        <description>&lt;h2 id=&quot;概述&quot;&gt;概述&lt;/h2&gt;
+
+&lt;p&gt;在PHP开发中工作里非常多使用到超时处理到超时的场合，我说几个场景：&lt;/p&gt;
+
+&lt;ol&gt;
+  &lt;li&gt;异步获取数据如果某个后端数据源获取不成功则跳过，不影响整个页面展现&lt;/li&gt;
+  &lt;li&gt;为了保证Web服务器不会因为当个页面处理性能差而导致无法访问其他页面，则会对某些页面操作设置&lt;/li&gt;
+  &lt;li&gt;对于某些上传或者不确定处理时间的场合，则需要对整个流程中所有超时设置为无限，否则任何一个环节设置不当，都会导致莫名执行中断&lt;/li&gt;
+  &lt;li&gt;多个后端模块（MySQL、Memcached、HTTP接口），为了防止单个接口性能太差，导致整个前面获取数据太缓慢，影响页面打开速度，引起雪崩&lt;/li&gt;
+  &lt;li&gt;。。。很多需要超时的场合&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;p&gt;这些地方都需要考虑超时的设定，但是PHP中的超时都是分门别类，各个处理方式和策略都不同，为了系统的描述，我总结了PHP中常用的超时处理的总结。&lt;/p&gt;
+
+&lt;h2 id=&quot;web服务器超时处理&quot;&gt;Web服务器超时处理&lt;/h2&gt;
+
+&lt;h3 id=&quot;apache&quot;&gt;Apache&lt;/h3&gt;
+
+&lt;p&gt;一般在性能很高的情况下，缺省所有超时配置都是30秒，但是在上传文件，或者网络速度很慢的情况下，那么可能触发超时操作。&lt;/p&gt;
+
+&lt;p&gt;目前apachefastcgiphp-fpm模式下有三个超时设置：&lt;/p&gt;
+
+&lt;p&gt;fastcgi超时设置：&lt;/p&gt;
+
+&lt;p&gt;修改httpd.conf的fastcgi连接配置，类似如下：&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&amp;lt;IfModulemod_fastcgi.c&amp;gt;FastCgiExternalServer/home/forum/apache/apache_php/cgi-bin/php-cgi-socket/home/forum/php5/etc/php-fpm.sock
+ScriptAlias/fcgi-bin/”/home/forum/apache/apache_php/cgi-bin/”
+
+AddHandlerphp-fastcgi.php
+
+Actionphp-fastcgi/fcgi-bin/php-cgi
+
+AddTypeapplication/x-httpd-php.php
+
+&amp;lt;/IfModule&amp;gt;
+&lt;/code&gt;&lt;/pre&gt;
+&lt;/div&gt;
+
+&lt;p&gt;缺省配置是30s，如果需要定制自己的配置，需要修改配置，比如修改为100秒：(修改后重启apache)：&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&amp;lt;IfModulemod_fastcgi.c&amp;gt;
+FastCgiExternalServer/home/forum/apache/apache_php/cgi-bin/php-cgi-socket/home/forum/php5/etc/php-fpm.sock-idle-timeout100
+
+ScriptAlias/fcgi-bin/”/home/forum/apache/apache_php/cgi-bin/”
+
+AddHandlerphp-fastcgi.php
+
+Actionphp-fastcgi/fcgi-bin/php-cgi
+
+AddTypeapplication/x-httpd-php.php
+
+&amp;lt;/IfModule&amp;gt;
+&lt;/code&gt;&lt;/pre&gt;
+&lt;/div&gt;
+
+&lt;p&gt;如果超时会返回500错误，断开跟后端php服务的连接，同时记录一条apache错误日志：&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;[ThuJan2718:30:152011][error][client10.81.41.110]FastCGI:commwithserver”/home/forum/apache/apache_php/cgi-bin/php-cgi”aborted:idletimeout(30sec)
+
+[ThuJan2718:30:152011][error][client10.81.41.110]FastCGI:incompleteheaders(0bytes)receivedfromserver”/home/forum/apache/apache_php/cgi-bin/php-cgi”
+&lt;/code&gt;&lt;/pre&gt;
+&lt;/div&gt;
+
+&lt;p&gt;其他fastcgi配置参数说明：&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;IdleTimeout发呆时限ProcessLifeTime一个进程的最长生命周期，过期之后无条件kill
+MaxProcessCount最大进程个数
+DefaultMinClassProcessCount每个程序启动的最小进程个数
+DefaultMaxClassProcessCount每个程序启动的最大进程个数
+IPCConnectTimeout程序响应超时时间
+IPCCommTimeout与程序通讯的最长时间，上面的错误有可能就是这个值设置过小造成的
+MaxRequestsPerProcess每个进程最多完成处理个数，达成后自杀
+&lt;/code&gt;&lt;/pre&gt;
+&lt;/div&gt;
+
+&lt;h3 id=&quot;lighttpd&quot;&gt;Lighttpd&lt;/h3&gt;
+
+&lt;p&gt;配置：lighttpd.conf&lt;/p&gt;
+
+&lt;p&gt;Lighttpd配置中，关于超时的参数有如下几个（篇幅考虑，只写读超时，写超时参数同理）：&lt;/p&gt;
+
+&lt;p&gt;主要涉及选项：&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;server.max-keep-alive-idle=5
+server.max-read-idle=60
+server.read-timeout=0
+server.max-connection-idle=360
+
+————————————————–
+
+#每次keep-alive的最大请求数,默认值是16
+
+server.max-keep-alive-requests=100
+
+#keep-alive的最长等待时间,单位是秒，默认值是5
+
+server.max-keep-alive-idle=1200
+
+#lighttpd的work子进程数，默认值是0，单进程运行
+
+server.max-worker=2
+
+#限制用户在发送请求的过程中，最大的中间停顿时间(单位是秒)，
+
+#如果用户在发送请求的过程中(没发完请求)，中间停顿的时间太长，lighttpd会主动断开连接
+
+#默认值是60(秒)
+
+server.max-read-idle=1200
+
+#限制用户在接收应答的过程中，最大的中间停顿时间(单位是秒)，
+
+#如果用户在接收应答的过程中(没接完)，中间停顿的时间太长，lighttpd会主动断开连接
+
+#默认值是360(秒)
+
+server.max-write-idle=12000
+
+#读客户端请求的超时限制，单位是秒,配为0表示不作限制
+
+#设置小于max-read-idle时，read-timeout生效
+
+server.read-timeout=0
+
+#写应答页面给客户端的超时限制，单位是秒，配为0表示不作限制
+
+#设置小于max-write-idle时，write-timeout生效
+
+server.write-timeout=0
+
+#请求的处理时间上限，如果用了mod_proxy_core，那就是和后端的交互时间限制,单位是秒
+
+server.max-connection-idle=1200
+
+————————————————–
+&lt;/code&gt;&lt;/pre&gt;
+&lt;/div&gt;
+
+&lt;p&gt;说明：&lt;/p&gt;
+
+&lt;p&gt;对于一个keep-alive连接上的连续请求，发送第一个请求内容的最大间隔由参数max-read-idle决定，从第二个请求起，发送请求内容的最大间隔由参数max-keep-alive-idle决定。请求间的间隔超时也由max-keep-alive-idle决定。发送请求内容的总时间超时由参数read-timeout决定。Lighttpd与后端交互数据的超时由max-connection-idle决定。&lt;/p&gt;
+
+&lt;p&gt;延伸阅读：&lt;/p&gt;
+
+&lt;p&gt;http://www.snooda.com/read/244&lt;/p&gt;
+
+&lt;h3 id=&quot;nginx&quot;&gt;Nginx&lt;/h3&gt;
+
+&lt;p&gt;配置：nginx.conf&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;http{
+#Fastcgi:(针对后端的fastcgi生效,fastcgi不属于proxy模式)
+
+fastcgi_connect_timeout5;#连接超时
+
+fastcgi_send_timeout10; #写超时
+
+fastcgi_read_timeout10;#读取超时
+
+#Proxy:(针对proxy/upstreams的生效)
+
+proxy_connect_timeout15s;#连接超时
+
+proxy_read_timeout24s;#读超时
+
+proxy_send_timeout10s; #写超时
+
+}
+&lt;/code&gt;&lt;/pre&gt;
+&lt;/div&gt;
+
+&lt;p&gt;说明：&lt;/p&gt;
+
+&lt;p&gt;Nginx 的超时设置倒是非常清晰容易理解，上面超时针对不同工作模式，但是因为超时带来的问题是非常多的。&lt;/p&gt;
+
+&lt;p&gt;延伸阅读：&lt;/p&gt;
+
+&lt;p&gt;&lt;a href=&quot;http://hi.baidu.com/pibuchou/blog/item/a1e330dd71fb8a5995ee3753.html&quot;&gt;http://hi.baidu.com/pibuchou/blog/item/a1e330dd71fb8a5995ee3753.html &lt;/a&gt; 
+&lt;a href=&quot;http://hi.baidu.com/pibuchou/blog/item/7cbccff0a3b77dc60b46e024.html&quot;&gt;http://hi.baidu.com/pibuchou/blog/item/7cbccff0a3b77dc60b46e024.html &lt;/a&gt; 
+&lt;a href=&quot;http://hi.baidu.com/pibuchou/blog/item/10a549818f7e4c9df703a626.html&quot;&gt;http://hi.baidu.com/pibuchou/blog/item/10a549818f7e4c9df703a626.html &lt;/a&gt; 
+&lt;a href=&quot;http://www.apoyl.com/?p=466&quot;&gt;http://www.apoyl.com/?p=466  &lt;/a&gt;&lt;/p&gt;
+
+&lt;h2 id=&quot;php本身超时处理&quot;&gt;PHP本身超时处理&lt;/h2&gt;
+
+&lt;h3 id=&quot;php-fpm&quot;&gt;PHP-fpm&lt;/h3&gt;
+
+&lt;p&gt;配置：php-fpm.conf&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&amp;lt;?xmlversion=”1.0″?&amp;gt;
+&amp;lt;configuration&amp;gt;
+
+//…
+
+Setsthelimitonthenumberofsimultaneousrequeststhatwillbeserved.
+
+EquivalenttoApacheMaxClientsdirective.
+
+EquivalenttoPHP_FCGI_CHILDRENenvironmentinoriginalphp.fcgi
+
+Usedwithanypm_style.
+
+#php-cgi的进程数量
+
+&amp;lt;valuename=”max_children”&amp;gt;128&amp;lt;/value&amp;gt;
+
+Thetimeout(inseconds)forservingasinglerequestafterwhichtheworkerprocesswillbeterminated
+
+Shouldbeusedwhen’max_execution_time’inioptiondoesnotstopscriptexecutionforsomereason
+
+’0s’means’off’
+
+#php-fpm 请求执行超时时间，0s为永不超时，否则设置一个 Ns 为超时的秒数
+
+&amp;lt;valuename=”request_terminate_timeout”&amp;gt;0s&amp;lt;/value&amp;gt;
+
+Thetimeout(inseconds)forservingofsinglerequestafterwhichaphpbacktracewillbedumpedtoslow.logfile
+
+’0s’means’off’
+
+&amp;lt;valuename=”request_slowlog_timeout”&amp;gt;0s&amp;lt;/value&amp;gt;
+
+&amp;lt;/configuration&amp;gt;
+&lt;/code&gt;&lt;/pre&gt;
+&lt;/div&gt;
+
+&lt;p&gt;说明：&lt;/p&gt;
+
+&lt;p&gt;在php.ini中，有一个参数max_execution_time可以设置PHP脚本的最大执行时间，但是，在php-cgi(php-fpm)中，该参数不会起效。真正能够控制PHP脚本最大执行时：&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&amp;lt;valuename=”request_terminate_timeout”&amp;gt;0s&amp;lt;/value&amp;gt;
+&lt;/code&gt;&lt;/pre&gt;
+&lt;/div&gt;
+
+&lt;p&gt;就是说如果是使用mod_php5.so的模式运行max_execution_time是会生效的，但是如果是php-fpm模式中运行时不生效的。&lt;/p&gt;
+
+&lt;p&gt;延伸阅读：&lt;/p&gt;
+
+&lt;p&gt;http://blog.s135.com/file_get_contents/&lt;/p&gt;
+
+&lt;h3 id=&quot;php&quot;&gt;PHP&lt;/h3&gt;
+
+&lt;p&gt;配置：php.ini&lt;/p&gt;
+
+&lt;p&gt;选项：&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;max_execution_time=30
+&lt;/code&gt;&lt;/pre&gt;
+&lt;/div&gt;
+
+&lt;p&gt;或者在代码里设置：&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;ini_set(“max_execution_time”,30);
+
+set_time_limit(30);
+&lt;/code&gt;&lt;/pre&gt;
+&lt;/div&gt;
+
+&lt;p&gt;说明：&lt;/p&gt;
+
+&lt;p&gt;对当前会话生效，比如设置0一直不超时，但是如果php的safe_mode打开了，这些设置都会不生效。&lt;/p&gt;
+
+&lt;p&gt;效果一样，但是具体内容需要参考php-fpm部分内容，如果php-fpm中设置了request_terminate_timeout的话，那么max_execution_time就不生效。&lt;/p&gt;
+
+&lt;h2 id=&quot;后端接口访问超时&quot;&gt;后端&amp;amp;接口访问超时&lt;/h2&gt;
+
+&lt;h2 id=&quot;http访问&quot;&gt;HTTP访问&lt;/h2&gt;
+
+&lt;p&gt;一般我们访问HTTP方式很多，主要是：curl,socket,file_get_contents()等方法。&lt;/p&gt;
+
+&lt;p&gt;如果碰到对方服务器一直没有响应的时候，我们就悲剧了，很容易把整个服务器搞死，所以在访问http的时候也需要考虑超时的问题。&lt;/p&gt;
+
+&lt;h3 id=&quot;curl-访问http&quot;&gt;CURL 访问HTTP&lt;/h3&gt;
+
+&lt;p&gt;CURL 是我们常用的一种比较靠谱的访问HTTP协议接口的lib库，性能高，还有一些并发支持的功能等。&lt;/p&gt;
+
+&lt;p&gt;CURL:&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;curl_setopt($ch,opt)可以设置一些超时的设置，主要包括：
+
+*(重要)CURLOPT_TIMEOUT设置cURL允许执行的最长秒数。
+
+*(重要)CURLOPT_TIMEOUT_MS设置cURL允许执行的最长毫秒数。(在cURL7.16.2中被加入。从PHP5.2.3起可使用。)
+
+CURLOPT_CONNECTTIMEOUT在发起连接前等待的时间，如果设置为0，则无限等待。
+
+CURLOPT_CONNECTTIMEOUT_MS尝试连接等待的时间，以毫秒为单位。如果设置为0，则无限等待。在cURL7.16.2中被加入。从PHP5.2.3开始可用。
+
+CURLOPT_DNS_CACHE_TIMEOUT设置在内存中保存DNS信息的时间，默认为120秒。
+&lt;/code&gt;&lt;/pre&gt;
+&lt;/div&gt;
+
+&lt;p&gt;curl普通秒级超时：&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;$ch=curl_init();
+
+curl_setopt($ch,CURLOPT_URL,$url);
+
+curl_setopt($ch,CURLOPT_RETURNTRANSFER,1);
+
+curl_setopt($ch,CURLOPT_TIMEOUT,60);//只需要设置一个秒的数量就可以
+
+curl_setopt($ch,CURLOPT_HTTPHEADER,$headers);
+
+curl_setopt($ch,CURLOPT_USERAGENT,$defined_vars['HTTP_USER_AGENT']);
+&lt;/code&gt;&lt;/pre&gt;
+&lt;/div&gt;
+
+&lt;p&gt;curl普通秒级超时使用：&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;curl_setopt($ch,CURLOPT_TIMEOUT,60);
+
+curl如果需要进行毫秒超时，需要增加：
+
+curl_easy_setopt(curl,CURLOPT_NOSIGNAL,1L);
+&lt;/code&gt;&lt;/pre&gt;
+&lt;/div&gt;
+
+&lt;p&gt;或者是：&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;curl_setopt($ch,CURLOPT_NOSIGNAL,true);是可以支持毫秒级别超时设置的
+&lt;/code&gt;&lt;/pre&gt;
+&lt;/div&gt;
+
+&lt;p&gt;curl一个毫秒级超时的例子：&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&amp;lt;?php
+if(!isset($_GET['foo'])){
+
+//Client
+
+$ch=curl_init(‘http://example.com/’);
+
+curl_setopt($ch,CURLOPT_RETURNTRANSFER,true);
+
+curl_setopt($ch,CURLOPT_NOSIGNAL,1);//注意，毫秒超时一定要设置这个
+
+curl_setopt($ch,CURLOPT_TIMEOUT_MS,200);//超时毫秒，cURL7.16.2中被加入。从PHP5.2.3起可使用
+
+$data=curl_exec($ch);
+
+$curl_errno=curl_errno($ch);
+
+$curl_error=curl_error($ch);
+
+curl_close($ch);
+
+if($curl_errno&amp;gt;0){
+
+echo”cURLError($curl_errno):$curl_errorn”;
+
+}else{
+
+echo”Datareceived:$datan”;
+
+}
+
+}else{
+
+//Server
+
+sleep(10);
+
+echo”Done.”;
+
+}
+
+?&amp;gt;
+&lt;/code&gt;&lt;/pre&gt;
+&lt;/div&gt;
+
+&lt;p&gt;其他一些技巧：&lt;/p&gt;
+
+&lt;ol&gt;
+  &lt;li&gt;按照经验总结是：cURL版本&amp;gt;=libcurl/7.21.0版本，毫秒级超时是一定生效的，切记。&lt;/li&gt;
+  &lt;li&gt;curl_multi的毫秒级超时也有问题。。单次访问是支持ms级超时的，curl_multi并行调多个会不准&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;h3 id=&quot;流处理方式访问http&quot;&gt;流处理方式访问HTTP&lt;/h3&gt;
+
+&lt;p&gt;除了curl，我们还经常自己使用fsockopen、或者是file操作函数来进行HTTP协议的处理，所以，我们对这块的超时处理也是必须的。&lt;/p&gt;
+
+&lt;p&gt;一般连接超时可以直接设置，但是流读取超时需要单独处理。&lt;/p&gt;
+
+&lt;p&gt;自己写代码处理:&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;$tmCurrent=gettimeofday();
+
+$intUSGone=($tmCurrent['sec']-$tmStart['sec'])*1000000
+
++($tmCurrent['usec']-$tmStart['usec']);
+
+if($intUSGone&amp;gt;$this-&amp;gt;_intReadTimeoutUS){
+
+returnfalse;
+
+}
+&lt;/code&gt;&lt;/pre&gt;
+&lt;/div&gt;
+
+&lt;p&gt;或者使用内置流处理函数stream_set_timeout()和stream_get_meta_data()处理：&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&amp;lt;?php//Timeoutinseconds
+$timeout=5;
+
+$fp=fsockopen(“example.com”,80,$errno,$errstr,$timeout);
+
+if($fp){
+
+fwrite($fp,”GET/HTTP/1.0rn”);
+
+fwrite($fp,”Host:example.comrn”);
+
+fwrite($fp,”Connection:Closernrn”);
+
+stream_set_blocking($fp,true);//重要，设置为非阻塞模式
+
+stream_set_timeout($fp,$timeout);//设置超时
+
+$info=stream_get_meta_data($fp);
+
+while((!feof($fp))&amp;amp;&amp;amp;(!$info['timed_out'])){
+
+$data.=fgets($fp,4096);
+
+$info=stream_get_meta_data($fp);
+
+ob_flush;
+
+flush();
+
+}
+
+if($info['timed_out']){
+
+echo”ConnectionTimedOut!”;
+
+}else{
+
+echo$data;
+
+}
+
+}
+&lt;/code&gt;&lt;/pre&gt;
+&lt;/div&gt;
+
+&lt;p&gt;file_get_contents超时：&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&amp;lt;?php$timeout=array(
+'http=&amp;gt;array(
+
+'timeout'=&amp;gt;5//设置一个超时时间，单位为秒
+
+)
+
+);
+
+$ctx=stream_context_create($timeout);
+
+$text=file_get_contents(&quot;http://example.com/&quot;,0,$ctx);
+
+?&amp;gt;
+&lt;/code&gt;&lt;/pre&gt;
+&lt;/div&gt;
+
+&lt;p&gt;fopen超时：&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&amp;lt;?php$timeout=array(
+'http'=&amp;gt;array(
+
+'timeout'=&amp;gt;5//设置一个超时时间，单位为秒
+
+)
+
+);
+
+$ctx=stream_context_create($timeout);
+
+if($fp=fopen(&quot;http://example.com/&quot;,&quot;r&quot;,false,$ctx)){
+
+while($c=fread($fp,8192)){
+
+echo$c;
+
+}
+
+fclose($fp);
+
+}
+
+?&amp;gt;
+&lt;/code&gt;&lt;/pre&gt;
+&lt;/div&gt;
+
+&lt;h2 id=&quot;mysql&quot;&gt;MySQL&lt;/h2&gt;
+
+&lt;p&gt;php中的mysql客户端都没有设置超时的选项，mysqli和mysql都没有，但是libmysql是提供超时选项的，只是我们在php中隐藏了而已。&lt;/p&gt;
+
+&lt;p&gt;那么如何在PHP中使用这个操作捏，就需要我们自己定义一些MySQL操作常量，主要涉及的常量有：&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;MYSQL_OPT_READ_TIMEOUT=11;
+
+MYSQL_OPT_WRITE_TIMEOUT=12;
+&lt;/code&gt;&lt;/pre&gt;
+&lt;/div&gt;
+
+&lt;p&gt;这两个，定义以后，可以使用options设置相应的值。&lt;/p&gt;
+
+&lt;p&gt;不过有个注意点，mysql内部实现：&lt;/p&gt;
+
+&lt;ol&gt;
+  &lt;li&gt;超时设置单位为秒，最少配置1秒&lt;/li&gt;
+  &lt;li&gt;但mysql底层的read会重试两次，所以实际会是3秒&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;p&gt;重试两次+　自身一次=3倍超时时间，那么就是说最少超时时间是3秒，不会低于这个值，对于大部分应用来说可以接受，但是对于小部分应用需要优化。&lt;/p&gt;
+
+&lt;p&gt;查看一个设置访问mysql超时的php实例：&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&amp;lt;?php//自己定义读写超时常量
+if(!defined(‘MYSQL_OPT_READ_TIMEOUT’)){
+
+define(‘MYSQL_OPT_READ_TIMEOUT’,11);
+
+}
+
+if(!defined(‘MYSQL_OPT_WRITE_TIMEOUT’)){
+
+define(‘MYSQL_OPT_WRITE_TIMEOUT’,12);
+
+}
+
+//设置超时
+
+$mysqli=mysqli_init();
+
+$mysqli-&amp;gt;options(MYSQL_OPT_READ_TIMEOUT,3);
+
+$mysqli-&amp;gt;options(MYSQL_OPT_WRITE_TIMEOUT,1);
+
+//连接数据库
+
+$mysqli-&amp;gt;real_connect(“localhost”,”root”,”root”,”test”);
+
+if(mysqli_connect_errno()){
+
+printf(“Connectfailed:%s/n”,mysqli_connect_error());
+
+exit();
+
+}
+
+//执行查询sleep1秒不超时
+
+printf(“Hostinformation:%s/n”,$mysqli-&amp;gt;host_info);
+
+if(!($res=$mysqli-&amp;gt;query(‘selectsleep(1)’))){
+
+echo”query1error:”.$mysqli-&amp;gt;error.”/n”;
+
+}else{
+
+echo”Query1:querysuccess/n”;
+
+}
+
+//执行查询sleep9秒会超时
+
+if(!($res=$mysqli-&amp;gt;query(‘selectsleep(9)’))){
+
+echo”query2error:”.$mysqli-&amp;gt;error.”/n”;
+
+}else{
+
+echo”Query2:querysuccess/n”;
+
+}
+
+$mysqli-&amp;gt;close();
+
+echo”closemysqlconnection/n”;
+
+?&amp;gt;
+&lt;/code&gt;&lt;/pre&gt;
+&lt;/div&gt;
+
+&lt;p&gt;延伸阅读：&lt;/p&gt;
+
+&lt;p&gt;&lt;a href=&quot;http://blog.csdn.net/heiyeshuwu/article/details/5869813&quot;&gt;http://blog.csdn.net/heiyeshuwu/article/details/5869813&lt;/a&gt;&lt;/p&gt;
+
+&lt;h2 id=&quot;memcached&quot;&gt;Memcached&lt;/h2&gt;
+
+&lt;h3 id=&quot;php扩展&quot;&gt;PHP扩展&lt;/h3&gt;
+
+&lt;p&gt;php_memcache客户端：&lt;/p&gt;
+
+&lt;p&gt;连接超时：&lt;code class=&quot;highlighter-rouge&quot;&gt;boolMemcache::connect(string$host[,int$port[,int$timeout]])&lt;/code&gt;&lt;/p&gt;
+
+&lt;p&gt;在get和set的时候，都没有明确的超时设置参数。&lt;/p&gt;
+
+&lt;p&gt;libmemcached客户端：在php接口没有明显的超时参数。&lt;/p&gt;
+
+&lt;p&gt;说明：所以说，在PHP中访问Memcached是存在很多问题的，需要自己hack部分操作，或者是参考网上补丁。&lt;/p&gt;
+
+&lt;h3 id=&quot;cc访问memcached&quot;&gt;C&amp;amp;C++访问Memcached&lt;/h3&gt;
+
+&lt;p&gt;客户端：libmemcached客户端&lt;/p&gt;
+
+&lt;p&gt;说明：memcache超时配置可以配置小点，比如5，10个毫秒已经够用了，超过这个时间还不如从数据库查询。&lt;/p&gt;
+
+&lt;p&gt;下面是一个连接和读取set数据的超时的C++示例：&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;//创建连接超时（连接到Memcached）
+memcached_st*MemCacheProxy::_create_handle()
+
+{
+
+memcached_st*mmc=NULL;
+
+memcached_return_tprc;
+
+if(_mpool!=NULL){//getfrompool
+
+mmc=memcached_pool_pop(_mpool,false,&amp;amp;prc);
+
+if(mmc==NULL){
+
+__LOG_WARNING__(“MemCacheProxy”,”gethandlefrompoolerror[%d]“,(int)prc);
+
+}
+
+returnmmc;
+
+}
+
+memcached_st*handle=memcached_create(NULL);
+
+if(handle==NULL){
+
+__LOG_WARNING__(“MemCacheProxy”,”create_handleerror”);
+
+returnNULL;
+
+}
+
+//设置连接/读取超时
+
+memcached_behavior_set(handle,MEMCACHED_BEHAVIOR_HASH,MEMCACHED_HASH_DEFAULT);
+
+memcached_behavior_set(handle,MEMCACHED_BEHAVIOR_NO_BLOCK,_noblock);//参数MEMCACHED_BEHAVIOR_NO_BLOCK为1使超时配置生效，不设置超时会不生效，关键时候会悲剧的，容易引起雪崩
+
+memcached_behavior_set(handle,MEMCACHED_BEHAVIOR_CONNECT_TIMEOUT,_connect_timeout);//连接超时
+
+memcached_behavior_set(handle,MEMCACHED_BEHAVIOR_RCV_TIMEOUT,_read_timeout);//读超时
+
+memcached_behavior_set(handle,MEMCACHED_BEHAVIOR_SND_TIMEOUT,_send_timeout);//写超时
+
+memcached_behavior_set(handle,MEMCACHED_BEHAVIOR_POLL_TIMEOUT,_poll_timeout);
+
+//设置一致hash
+
+//memcached_behavior_set_distribution(handle,MEMCACHED_DISTRIBUTION_CONSISTENT);
+
+memcached_behavior_set(handle,MEMCACHED_BEHAVIOR_DISTRIBUTION,MEMCACHED_DISTRIBUTION_CONSISTENT);
+
+memcached_returnrc;
+
+for(uinti=0;i&amp;lt;_server_count;i++){
+
+rc=memcached_server_add(handle,_ips[i],_ports[i]);
+
+if(MEMCACHED_SUCCESS!=rc){
+
+__LOG_WARNING__(“MemCacheProxy”,”addserver[%s:%d]failed.”,_ips[i],_ports[i]);
+
+}
+
+}
+
+_mpool=memcached_pool_create(handle,_min_connect,_max_connect);
+
+if(_mpool==NULL){
+
+__LOG_WARNING__(“MemCacheProxy”,”create_poolerror”);
+
+returnNULL;
+
+}
+
+mmc=memcached_pool_pop(_mpool,false,&amp;amp;prc);
+
+if(mmc==NULL){
+
+__LOG_WARNING__(“MyMemCacheProxy”,”gethandlefrompoolerror[%d]“,(int)prc);
+
+}
+
+//__LOG_DEBUG__(“MemCacheProxy”,”gethandle[%p]“,handle);
+
+returnmmc;
+
+}
+
+//设置一个key超时（set一个数据到memcached）
+
+boolMemCacheProxy::_add(memcached_st*handle,unsignedint*key,constchar*value,intlen,unsignedinttimeout)
+
+{
+
+memcached_returnrc;
+
+chartmp[1024];
+
+snprintf(tmp,sizeof(tmp),”%u#%u”,key[0],key[1]);
+
+//有个timeout值
+
+rc=memcached_set(handle,tmp,strlen(tmp),(char*)value,len,timeout,0);
+
+if(MEMCACHED_SUCCESS!=rc){
+
+returnfalse;
+
+}
+
+returntrue;
+
+}
+
+//Memcache读取数据超时(没有设置)
+&lt;/code&gt;&lt;/pre&gt;
+&lt;/div&gt;
+
+&lt;p&gt;libmemcahed源码中接口定义：&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;LIBMEMCACHED_APIchar*memcached_get(memcached_st*ptr,constchar*key,size_tkey_length,size_t*value_length,uint32_t*flags,memcached_return_t*error);
+
+LIBMEMCACHED_APImemcached_return_tmemcached_mget(memcached_st*ptr,constchar*const*keys,constsize_t*key_length,size_tnumber_of_keys);
+&lt;/code&gt;&lt;/pre&gt;
+&lt;/div&gt;
+
+&lt;p&gt;从接口中可以看出在读取数据的时候，是没有超时设置的。&lt;/p&gt;
+
+&lt;p&gt;延伸阅读：&lt;/p&gt;
+
+&lt;p&gt;&lt;a href=&quot;http://hi.baidu.com/chinauser/item/b30af90b23335dde73e67608&quot;&gt;http://hi.baidu.com/chinauser/item/b30af90b23335dde73e67608  &lt;/a&gt;
+&lt;a href=&quot;http://libmemcached.org/libMemcached.html&quot;&gt;http://libmemcached.org/libMemcached.html&lt;/a&gt;&lt;/p&gt;
+
+&lt;h2 id=&quot;如何实现超时&quot;&gt;如何实现超时&lt;/h2&gt;
+
+&lt;p&gt;程序中需要有超时这种功能，比如你单独访问一个后端Socket模块，Socket模块不属于我们上面描述的任何一种的时候，它的协议也是私有的，那么这个时候可能需要自己去实现一些超时处理策略，这个时候就需要一些处理代码了。&lt;/p&gt;
+
+&lt;h3 id=&quot;php中超时实现&quot;&gt;PHP中超时实现&lt;/h3&gt;
+
+&lt;p&gt;一、初级：最简单的超时实现 （秒级超时）&lt;/p&gt;
+
+&lt;p&gt;思路很简单：链接一个后端，然后设置为非阻塞模式，如果没有连接上就一直循环，判断当前时间和超时时间之间的差异。&lt;/p&gt;
+
+&lt;p&gt;phpsocket中实现原始的超时：(每次循环都当前时间去减，性能会很差，cpu占用会较高)&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&amp;lt;?$host=”127.0.0.1″;
+$port=”80″;
+
+$timeout=15;//timeoutinseconds
+
+$socket=socket_create(AF_INET,SOCK_STREAM,SOL_TCP)
+
+ordie(“Unabletocreatesocketn”);
+
+socket_set_nonblock($socket) //务必设置为阻塞模式
+
+ordie(“Unabletosetnonblockonsocketn”);
+
+$time=time();
+
+//循环的时候每次都减去相应值
+
+while(!@socket_connect($socket,$host,$port))//如果没有连接上就一直死循环
+
+{
+
+$err=socket_last_error($socket);
+
+if($err==115||$err==114)
+
+{
+
+if((time()-$time)&amp;gt;=$timeout)//每次都需要去判断一下是否超时了
+
+{
+
+socket_close($socket);
+
+die(“Connectiontimedout.n”);
+
+}
+
+sleep(1);
+
+continue;
+
+}
+
+die(socket_strerror($err).”n”);
+
+}
+
+socket_set_block($this-&amp;gt;socket)//还原阻塞模式
+
+ordie(“Unabletosetblockonsocketn”);
+
+?&amp;gt;
+&lt;/code&gt;&lt;/pre&gt;
+&lt;/div&gt;
+
+&lt;p&gt;二、升级：使用PHP自带异步IO去实现（毫秒级超时）&lt;/p&gt;
+
+&lt;p&gt;说明：&lt;/p&gt;
+
+&lt;p&gt;异步IO：异步IO的概念和同步IO相对。当一个异步过程调用发出后，调用者不能立刻得到结果。实际处理这个调用的部件在完成后，通过状态、通知和回调来通知调用者。异步IO将比特分成小组进行传送，小组可以是8位的1个字符或更长。发送方可以在任何时刻发送这些比特组，而接收方从不知道它们会在什么时候到达。&lt;/p&gt;
+
+&lt;p&gt;多路复用：复用模型是对多个IO操作进行检测，返回可操作集合，这样就可以对其进行操作了。这样就避免了阻塞IO不能随时处理各个IO和非阻塞占用系统资源的确定。&lt;/p&gt;
+
+&lt;p&gt;使用socket_select()实现超时&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;socket_select(…,floor($timeout),ceil($timeout*1000000));
+&lt;/code&gt;&lt;/pre&gt;
+&lt;/div&gt;
+
+&lt;p&gt;select的特点：能够设置到微秒级别的超时！&lt;/p&gt;
+
+&lt;p&gt;使用socket_select()的超时代码（需要了解一些异步IO编程的知识去理解）&lt;/p&gt;
+
+&lt;p&gt;编程 调用类 编程&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&amp;lt;?php
+
+$server=newServer;
+
+$client=newClient;
+
+for(;;){
+
+foreach($select-&amp;gt;can_read(0)as$socket){
+
+if($socket==$client-&amp;gt;socket){
+
+//NewClientSocket
+
+$select-&amp;gt;add(socket_accept($client-&amp;gt;socket));
+
+}
+
+else{
+
+//there’ssomethingtoreadon$socket
+
+}
+
+}
+
+}
+
+?&amp;gt;
+&lt;/code&gt;&lt;/pre&gt;
+&lt;/div&gt;
+
+&lt;p&gt;编程 异步多路复用IO &amp;amp; 超时连接处理类 编程&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&amp;lt;?php
+
+classselect{
+
+var$sockets;
+
+functionselect($sockets){
+
+$this-&amp;gt;sockets=array();
+
+foreach($socketsas$socket){
+
+$this-&amp;gt;add($socket);
+
+}
+
+}
+
+functionadd($add_socket){
+
+array_push($this-&amp;gt;sockets,$add_socket);
+
+}
+
+functionremove($remove_socket){
+
+$sockets=array();
+
+foreach($this-&amp;gt;socketsas$socket){
+
+if($remove_socket!=$socket)
+
+$sockets[]=$socket;
+
+}
+
+$this-&amp;gt;sockets=$sockets;
+
+}
+
+functioncan_read($timeout){
+
+$read=$this-&amp;gt;sockets;
+
+socket_select($read,$write=NULL,$except=NULL,$timeout);
+
+return$read;
+
+}
+
+functioncan_write($timeout){
+
+$write=$this-&amp;gt;sockets;
+
+socket_select($read=NULL,$write,$except=NULL,$timeout);
+
+return$write;
+
+}
+
+}
+
+?&amp;gt;
+&lt;/code&gt;&lt;/pre&gt;
+&lt;/div&gt;
+
+&lt;h3 id=&quot;cc中超时实现&quot;&gt;C&amp;amp;C++中超时实现&lt;/h3&gt;
+
+&lt;p&gt;一般在LinuxC/C++中，可以使用：alarm()设置定时器的方式实现秒级超时，或者：select()、poll()、epoll()之类的异步复用IO实现毫秒级超时。也可以使用二次封装的异步io库（libevent,libev）也能实现。&lt;/p&gt;
+
+&lt;p&gt;一、使用alarm中用信号实现超时 （秒级超时）&lt;/p&gt;
+
+&lt;p&gt;说明：Linux内核connect超时通常为75秒，我们可以设置更小的时间如10秒来提前从connect中返回。这里用使用信号处理机制，调用alarm，超时后产生SIGALRM信号（也可使用select实现）&lt;/p&gt;
+
+&lt;p&gt;用alarym秒级实现　connect设置超时代码示例：&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;//信号处理函数staticvoidconnect_alarm(intsigno)
+{
+
+debug_printf(“SignalHandler”);
+
+return;
+
+}
+
+//alarm超时连接实现
+
+staticvoidconn_alarm()
+
+{
+
+Sigfunc*sigfunc;//现有信号处理函数
+
+sigfunc=signal(SIGALRM,connect_alarm);//建立信号处理函数connect_alarm,(如果有)保存现有的信号处理函数
+
+inttimeout=5;
+
+//设置闹钟
+
+if(alarm(timeout)!=0){
+
+//…闹钟已经设置处理
+
+}
+
+//进行连接操作
+
+if(connect(m_Socket,(structsockaddr*)&amp;amp;addr,sizeof(addr))&amp;lt;0){
+
+if(errno==EINTR){//如果错误号设置为EINTR，说明超时中断了
+
+debug_printf(“Timeout”);
+&lt;/code&gt;&lt;/pre&gt;
+&lt;/div&gt;
+</description>
+        <pubDate>Tue, 15 Mar 2016 00:00:00 +0800</pubDate>
+        <link>http://localhost:4000/2016/03/15/PHP%E8%B6%85%E6%97%B6%E5%A4%84%E7%90%86%E5%85%A8%E9%9D%A2%E6%80%BB%E7%BB%93/</link>
+        <guid isPermaLink="true">http://localhost:4000/2016/03/15/PHP%E8%B6%85%E6%97%B6%E5%A4%84%E7%90%86%E5%85%A8%E9%9D%A2%E6%80%BB%E7%BB%93/</guid>
+        
+        <category>Francis 杂谈</category>
+        
+        <category>PHP</category>
+        
+        <category>C</category>
+        
+        
+      </item>
+    
+      <item>
+        <title>忙忙碌碌，虚虚实实的生活</title>
+        <description>&lt;p&gt;最近太忙碌了，工作忙，学习忙，以后的三年没有周末了。现在的周末比平时都要忙，仿佛一夜之间恢复到了学生时代，在我还没有做好迎接它的时候。&lt;/p&gt;
+
+&lt;p&gt;现在才发现时间真的是太珍贵了，虚度光阴的日子不能再重复了。也好，让自己的生活更充实一些。&lt;/p&gt;
+
+&lt;p&gt;如果简单点想的话，其实没有那么可怕，相信自己会逐步适应这种节奏。&lt;/p&gt;
+
+&lt;p&gt;数学中有种思想叫化归，更适合作为我现在的指导思想。&lt;/p&gt;
+
+&lt;p&gt;来，听首我最喜欢的钢琴曲吧。继续前行！&lt;/p&gt;
+
+&lt;audio controls=&quot;controls&quot; autoplay=&quot;autoplay&quot; loop=&quot;loop&quot;&gt;
+  &lt;source src=&quot;http://source.francissoung.com/music%2FPure%20Music%20-%20%E5%8D%A1%E5%86%9C.mp3&quot; type=&quot;audio/mpeg&quot; /&gt;
+Your browser does not support the audio tag.
+&lt;/audio&gt;
+
+</description>
+        <pubDate>Mon, 14 Mar 2016 00:00:00 +0800</pubDate>
+        <link>http://localhost:4000/2016/03/14/%E5%BF%99%E5%BF%99%E7%A2%8C%E7%A2%8C-%E8%99%9A%E8%99%9A%E5%AE%9E%E5%AE%9E%E7%9A%84%E7%94%9F%E6%B4%BB/</link>
+        <guid isPermaLink="true">http://localhost:4000/2016/03/14/%E5%BF%99%E5%BF%99%E7%A2%8C%E7%A2%8C-%E8%99%9A%E8%99%9A%E5%AE%9E%E5%AE%9E%E7%9A%84%E7%94%9F%E6%B4%BB/</guid>
+        
+        <category>Francis 简单生活</category>
+        
+        
+      </item>
+    
+      <item>
+        <title>不要为自己选择的道路而后悔</title>
+        <description>&lt;blockquote&gt;
+  &lt;p&gt;自己选择的路，再艰难也要走下去，不要为自己选择的道路而后悔，摔跤了不要哭，再爬起来，站直一笑，拍拍尘灰继续奔跑!&lt;/p&gt;
+&lt;/blockquote&gt;
+
+&lt;p&gt;&lt;strong&gt;永远都不要去为自己选择的道路而后悔，不管是十年前还是现在&lt;/strong&gt;。控制好心情生活才会处处祥和。好心态塑造好心情，好心情塑造最出色的自己。过去的别再遗憾;未来的无须忧虑;现在的加倍珍惜。摔跤了不要哭，再爬起来，站直一笑，拍拍尘灰继续奔跑。正视人生的每一个挫折适应人生的每一回起伏，吸取人生的每一场失败利用人生的每一个坎坷。&lt;/p&gt;
+
+&lt;p&gt;等待太久得来的东西多半已经不是当初自己想要的样子了。我们都在时光里跌跌撞撞地成长然后一点点离开最初的模样。所谓的朋友就是在你浑身的缺点里，也能看到所剩的优点，然后一捧土一捧土地把你从绝望无助肮脏复杂里拉出来。告诉你，你很好，你值得被人爱。但也会拍拍你的肩膀，你要注意脚下的坑，若绕过就不会摔得鼻青脸肿。&lt;/p&gt;
+
+&lt;p&gt;不要由于别人不能成为你所希望的人而愤怒，因为你自己也不能成为自己所希望的人。总是活在一些极致的情绪里，某一段时间会对生活充满了信心，但突然在某一瞬间，你又会全盘推翻。你有信心时，无所不能，而你推翻这一切的时候，也是百分之百的灰心。&lt;/p&gt;
+
+&lt;p&gt;有时候，最难放下的是一些你从没真正拥有过的事。有时候你把什么放下了，不是因为突然就舍得了，而是因为期限到了，任性够了成熟多了，也就知道这一页该翻过去了。失败时有人伸出一只手来为你擦泪，会好过成功时无数人伸手为你鼓掌。&lt;/p&gt;
+
+&lt;p&gt;有些事，会让你用眼泪哭。有些事，会让你埋在心底里哭。有些事，会让你整个灵魂哭。我们每一个人，都会遇见绝望和痛苦，所有人都会哭，而流泪往往不是最伤心的。你可能心丧若死，却面无表情，枯坐了几天，才突然哭出来，泪水流下时，你才是得救了。眼泪是心里的毒，流出来就好了。&lt;/p&gt;
+
+&lt;p&gt;接下来的日子里，我要做的只有一件事，把自己变得优秀。努力给自己一个最美好的心情，平衡住自己的气息，调整好自己的心态，不急于成功之事，就算摔了再大的跤，也一样能成为明天的更好。学着看淡一些事情，才是对自己最好的保护。&lt;/p&gt;
+</description>
+        <pubDate>Mon, 14 Mar 2016 00:00:00 +0800</pubDate>
+        <link>http://localhost:4000/2016/03/14/%E4%B8%8D%E8%A6%81%E4%B8%BA%E8%87%AA%E5%B7%B1%E9%80%89%E6%8B%A9%E7%9A%84%E9%81%93%E8%B7%AF%E8%80%8C%E5%90%8E%E6%82%94/</link>
+        <guid isPermaLink="true">http://localhost:4000/2016/03/14/%E4%B8%8D%E8%A6%81%E4%B8%BA%E8%87%AA%E5%B7%B1%E9%80%89%E6%8B%A9%E7%9A%84%E9%81%93%E8%B7%AF%E8%80%8C%E5%90%8E%E6%82%94/</guid>
+        
+        <category>Francis 简单生活</category>
+        
+        
+      </item>
+    
+  </channel>
+</rss>

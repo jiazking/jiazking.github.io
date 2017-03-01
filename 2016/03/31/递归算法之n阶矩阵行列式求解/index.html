@@ -1,0 +1,873 @@
+<!DOCTYPE html>
+<html lang="zh">
+
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="这是一个程序员的日记薄，记录工作与生活的点点滴滴。包括WEB程序开发、Linux服务器管理、LAMP/LNMP环境配置优化、PHP网络技术、MySQL优化等技术分享以及个人生活旅行中的所见所闻所解。">
+    <meta name="keywords"  content="WEB程序开发,Linux服务器管理,LAMP/LNMP环境配置优化,网络架构,MySQL优化,生活旅行,Francis,francissoung,php程序猿的笔记,程序员的日记薄">
+    <link rel="shortcut icon" href="/img/favicon.ico">
+
+    <title>递归算法之n阶矩阵行列式求解 - Francis Soung</title>
+
+    <link rel="canonical" href="http://localhost:4000/2016/03/31/%E9%80%92%E5%BD%92%E7%AE%97%E6%B3%95%E4%B9%8Bn%E9%98%B6%E7%9F%A9%E9%98%B5%E8%A1%8C%E5%88%97%E5%BC%8F%E6%B1%82%E8%A7%A3/">
+
+    
+    <!-- css CDN to qiniu -->
+    <link rel="stylesheet" href="http://7xl0td.com1.z0.glb.clouddn.com/css%2Fbootstrap.min.css">
+    <link rel="stylesheet" href="http://7xl0td.com1.z0.glb.clouddn.com/css%2Ffrancis-blog.min.css">
+    <link rel="stylesheet" href="http://7xl0td.com1.z0.glb.clouddn.com/css%2Fsyntax.css">
+    <link rel="stylesheet" href="http://7xl0td.com1.z0.glb.clouddn.com/css%2Freturntop.css">
+    
+
+    <link href="http://cdn.staticfile.org/font-awesome/4.2.0/css/font-awesome.min.css" rel="stylesheet" type="text/css">
+
+    <!-- HTML5 Shim and Respond.js IE8 support of HTML5 elements and media queries -->
+    <!-- WARNING: Respond.js doesn't work if you view the page via file:// -->
+    <!--[if lt IE 9]>
+        <script src="https://oss.maxcdn.com/libs/html5shiv/3.7.0/html5shiv.js"></script>
+        <script src="https://oss.maxcdn.com/libs/respond.js/1.4.2/respond.min.js"></script>
+    <![endif]-->
+
+</head>
+
+
+<!-- hack iOS CSS :active style -->
+<body ontouchstart="">
+
+    <!-- Navigation -->
+<nav class="navbar navbar-default navbar-custom navbar-fixed-top">
+    <div class="container-fluid">
+        <!-- Brand and toggle get grouped for better mobile display -->
+        <div class="navbar-header page-scroll">
+            <button type="button" class="navbar-toggle">
+                <span class="sr-only">Toggle navigation</span>
+                <span class="icon-bar"></span>
+                <span class="icon-bar"></span>
+                <span class="icon-bar"></span>
+            </button>
+            <a class="navbar-brand" href="/">St.thomas</a>
+        </div>
+
+        <!-- Collect the nav links, forms, and other content for toggling -->
+        <div id="huxblog_navbar">
+            <div class="navbar-collapse">
+                <ul class="nav navbar-nav navbar-right">
+                    <li>
+                        <a href="/">Home</a>
+                    </li>
+                    
+                    <li>
+                        <a href="/about/">About</a>
+                    </li>
+                    
+                    <li>
+                        <a href="/archives/">Archives</a>
+                    </li>
+                    
+                    <li>
+                        <a href="/portfolio/">Portfolio</a>
+                    </li>
+                    
+                    <li>
+                        <a href="/tags/">Tags</a>
+                    </li>
+                    
+                </ul>
+            </div>
+        </div>
+        <!-- /.navbar-collapse -->
+    </div>
+    <!-- /.container -->
+</nav>
+<script>
+    // Drop Bootstarp low-performance Navbar
+    // Use customize navbar with high-quality material design animation
+    // in high-perf jank-free CSS3 implementation
+    var $body   = document.body;
+    var $toggle = document.querySelector('.navbar-toggle');
+    var $navbar = document.querySelector('#huxblog_navbar');
+    var $collapse = document.querySelector('.navbar-collapse');
+
+    var __HuxNav__ = {
+        close: function(){
+            $navbar.className = " ";
+            // wait until animation end.
+            setTimeout(function(){
+                // prevent frequently toggle
+                if($navbar.className.indexOf('in') < 0) {
+                    $collapse.style.height = "0px"
+                }
+            },400)
+        },
+        open: function(){
+            $collapse.style.height = "auto"
+            $navbar.className += " in";
+        }
+    }
+
+    // Bind Event
+    $toggle.addEventListener('click', function(e){
+        if ($navbar.className.indexOf('in') > 0) {
+            __HuxNav__.close()
+        }else{
+            __HuxNav__.open()
+        }
+    })
+
+    /**
+     * Since Fastclick is used to delegate 'touchstart' globally
+     * to hack 300ms delay in iOS by performing a fake 'click',
+     * Using 'e.stopPropagation' to stop 'touchstart' event from 
+     * $toggle/$collapse will break global delegation.
+     * 
+     * Instead, we use a 'e.target' filter to prevent handler
+     * added to document close HuxNav.  
+     *
+     * Also, we use 'click' instead of 'touchstart' as compromise
+     */
+    document.addEventListener('click', function(e){
+        if(e.target == $toggle) return;
+        if(e.target.className == 'icon-bar') return;
+        __HuxNav__.close();
+    })
+</script>
+
+
+    <!-- Image to hack wechat -->
+<!-- <img src="/img/icon_wechat.png" width="0" height="0"> -->
+<!-- <img src="/img/post-bg-hanglieshi.jpg" width="0" height="0"> -->
+
+<!-- Post Header -->
+<style type="text/css">
+    header.intro-header{
+        position: relative;
+        background-image: url('/img/post-bg-hanglieshi.jpg')
+    }
+
+    
+</style>
+<header class="intro-header" >
+    <div class="header-mask"></div>
+    <div class="container">
+        <div class="row">
+            <div class="col-lg-8 col-lg-offset-2 col-md-10 col-md-offset-1">
+                <div class="post-heading">
+                    <div class="tags">
+                        
+                        <a class="tag" href="/tags/#算法" title="算法">算法</a>
+                        
+                        <a class="tag" href="/tags/#编程" title="编程">编程</a>
+                        
+                    </div>
+                    <h1>递归算法之n阶矩阵行列式求解</h1>
+                    
+                    
+                    <h2 class="subheading">最近高等代数正好讲到这里，此篇文章正好对所学知识做一个具体程序实践。</h2>
+                    
+                    <span class="meta">Posted by Francis Soung on March 31, 2016</span>
+                </div>
+            </div>
+        </div>
+    </div>
+</header>
+
+<!-- Post Content -->
+<article>
+    <div class="container">
+        <div class="row">
+
+            <!-- Post Container -->
+            <div class="
+                col-lg-8 col-lg-offset-2
+                col-md-10 col-md-offset-1
+                post-container">
+
+                <blockquote>
+  <p>设计算法时使用递归的思想是一个程序员的基本素质，递归可以把一个很庞大的问题转化为规模缩小了的同类问题的子问题，通过这一思想，我们编程时运用递归可以使用很少的代码来处理很大的问题。这篇文章将会讲到递归算法的运用。</p>
+</blockquote>
+
+<p>在数学中，很多数学函数都是由一个公式来表达的，比如 <em>f(x) = 100x</em>; 这个公式可以让我们把长度米转换成长度厘米。 有了这个公式，在程序中敲出一行代码，写出一个函数（function）来计算实在是太简单方便了，就像这样。</p>
+
+<div class="highlighter-rouge"><pre class="highlight"><code>int convert(int m){
+    return 100*m;
+}
+</code></pre>
+</div>
+
+<p>我们就写好了一个函数来进行米到厘米的单位换算。</p>
+
+<p>但是有的时候，数学函数会以不太标准的形式来定义，比如这个函数，他满足 <em>f(0)=0</em>而且 <em>f(x) = 2f(x-1)+x</em>; 从这个函数定义我们可以得出 <em>f(1)=1</em>;<em>f(2)=3</em>;等等。当一个函数用他自己来定义时就称为这个函数是递归的。</p>
+
+<p>通俗地讲，就是从前有个山，山里有个庙，庙里有个老和尚再给小和尚讲故事，讲的是：从前有个山，山里有个庙，庙里有个老和尚再给小和尚讲故事。。。。这就是递归。</p>
+
+<p>好了说了这么多你们肯定还是一头雾水，现在来实践一下。</p>
+
+<h3 id="递归求阶乘">递归求阶乘</h3>
+
+<p>刚开始学编程的同学一定会写求阶乘的函数，使用for循环或者while循环都可以，但是递归却完全用不上这两个循环。</p>
+
+<div class="highlighter-rouge"><pre class="highlight"><code>public static int factorial(int a){
+
+    if (a==0 || a==1){
+        return 1;
+    }
+
+    return a*factorial(a-1);
+}
+</code></pre>
+</div>
+
+<p>上面的代码就是递归求阶乘的方法，a是需要传入的参数，比如我们要求5的阶乘就传入5这样factorial函数最终的返回值为120；</p>
+
+<p>分析这段代码，他的第3行到第五行处理了 <strong>基准情况（Base Case）</strong>，在这个情况下，函数的值可以直接算出而不用求出递归。就像上文提到的函数<em>f(x) = 2f(x-1)+x</em>;如果没有f(0)=0这个事实在数学上没有意义一样。 再编程中，如果没有基准情况也是无意义的。第7行执行的是递归调用。</p>
+
+<p>所以所，设计递归算法，需要包含以下两个基本法则：</p>
+
+<p><strong>1、基准情形（Base Case），必须总要有某些基准的清醒，在这个情形中，不执行递归就能求解。</strong></p>
+
+<p><strong>2、不断推进（Making Progress），对于需要递归求解的情形，递归调用必须总能够朝着一个基准情形推进。这样的话，不断推进到基准情形，到达基准情形的时候递归才会推出，得到返回值。</strong></p>
+
+<p><img src="http://source.francissoung.com//2016%2F03%2F30%2Fn%E9%98%B6%E7%9F%A9%E9%98%B5%E8%A1%8C%E5%88%97%E5%BC%8F%E6%B1%82%E8%A7%A31.jpg" alt="" /></p>
+
+<h3 id="n阶矩阵行列式的求解">n阶矩阵行列式的求解</h3>
+
+<p>有了刚在知识的铺垫，现在我们可以动手写一个程序来用递归计算n阶矩阵的行列式了。</p>
+
+<p><strong>首先来看下二阶矩阵的求法</strong>：</p>
+
+<p><img src="http://source.francissoung.com/2016%2F03%2F30%2Fn%E9%98%B6%E7%9F%A9%E9%98%B5%E8%A1%8C%E5%88%97%E5%BC%8F%E6%B1%82%E8%A7%A32.png" alt="" /></p>
+
+<p>也就是说2×2矩阵的元素交叉相乘再想减即可求出行列式。</p>
+
+<p><strong>接下来是3阶矩阵</strong>：</p>
+
+<p><img src="http://source.francissoung.com/2016%2F03%2F30%2Fn%E9%98%B6%E7%9F%A9%E9%98%B5%E8%A1%8C%E5%88%97%E5%BC%8F%E6%B1%82%E8%A7%A33.png" alt="" /></p>
+
+<p>3×3矩阵求解中，选择任意行或者列，在那一行/列中,移除那个元素所在的行和列比如选择a11，则移除第一行和第一列，这样矩阵就变成了2×2的，再按照刚才的方法求2×2矩阵的行列式即可。之后整个行或列的3个元素进行此类运算后相加就是3×3的行列式。</p>
+
+<p><strong>n x n矩阵</strong>：</p>
+
+<p>n阶矩阵就和3阶矩阵求解的方法一样了，使用3×3求解的方法，比如4阶矩阵，将4阶消除成3阶，然后再变成2阶来算。但是矩阵每上升一个维度，计算量就会扩大很多。</p>
+
+<p><img src="http://source.francissoung.com/2016%2F03%2F30%2Fn%E9%98%B6%E7%9F%A9%E9%98%B5%E8%A1%8C%E5%88%97%E5%BC%8F%E6%B1%82%E8%A7%A34.gif" alt="" /></p>
+
+<p>知道了n阶矩阵行列式的计算思路后，就可以开始编写算法了。</p>
+
+<p><strong>首先是数据结构设计</strong>，我们需要设计一个矩阵类来提供便利，这个类有两个成员，一个二维数组，用来储存矩阵，一个整数，来储存矩阵的行数或列数（行列式必须是方矩阵才可以求解所以行列无所谓）。</p>
+
+<p>以下是整个Matrix类的设计：</p>
+
+<div class="highlighter-rouge"><pre class="highlight"><code>static class Matrix{
+
+    private int rowNum=0;
+
+    private int[][] array;
+
+    //Constructor
+    public Matrix(int rowNum){
+        this.rowNum = rowNum;
+        array = new int[rowNum][rowNum];
+    }
+
+    public Matrix(int[][] array){
+        this.array = array;
+        this.rowNum = array.length;
+    }
+
+    int counter = 0; //For add Element
+
+    public void addElement(int a){
+        array[(counter)/rowNum][counter%rowNum] = a;
+        counter++;
+    }
+
+    //Print the instance itself
+    public void printMat(){
+        for (int i=0;i &lt; rowNum ;i++){
+            for (int j=0;j &lt; rowNum ;j++){
+                 System.out.print(array[i][j]+\t;);
+            }
+            System.out.println();
+        }
+    }
+
+    //Setter and Getter
+    public int getRowNum() {
+        return rowNum;
+    }
+
+    public int[][] getArray() {
+        return array;
+    }
+
+    public void setArray(int[][] array) {
+        this.array = array;
+    }
+
+}
+</code></pre>
+</div>
+
+<p>Matrix类中有两个构造方法：传入整数a会初始化一个axa大小的空矩阵，传入一个二维数组的话即可根据二维初始化一个Matrix对象。</p>
+
+<p>Matrix类中有一个方法比较特殊：addElement方法，通过不断调用这个函数即可向一个Matrix实例进行有顺序的负值，第一次调用则会更改第第一行第一列位置上的值，第二次调用则会更改第一行第二列上的值，以此类推。</p>
+
+<p>接下来就是设计一个MatrixCalculator类的，这个类中的一个成员方法可以求出行列式，我命名他为getDet(); 在计算行列式的时候需要移除元素所在的行和列，生成一个减小了一个维度的矩阵，我们需要编写一个方法来完成这个操作，我命名他为removeRowAndCol()；还有一个方法，由于相加的时候会产生符号的改变，所以需要写一个方法来计算矩阵中一个元素的cofactor，命名为getCofactor。</p>
+
+<p>以下就是removeRowAndCol方法的代码：传入需要移除的行和列和一个Matrix对象，函数会返回消除了指定行和列的Matrix对象。</p>
+
+<div class="highlighter-rouge"><pre class="highlight"><code>public static Matrix removeRowAndCol(int row,int col,Matrix mat){
+
+    int matRowNum = mat.getRowNum();
+    int[][] arr = mat.getArray();
+
+    Matrix matrix = new Matrix(matRowNum-1);
+
+    for (int i = 0;i &lt; matRowNum; i++){
+        for (int j = 0 &lt; matRowNum; j++){
+                if (i!=row &amp;&amp; j!=col) {
+                    matrix.addElement(arr[i][j]);
+                }
+        }
+    }
+
+    matrix.printMat();
+    return matrix;
+
+}
+</code></pre>
+</div>
+
+<p>以下是getCofactor方法：由于我的算法只会去遍历矩阵第一列来进行求解，所以得到Cofactor的代码就变得简单很多。</p>
+
+<div class="highlighter-rouge"><pre class="highlight"><code>public static int getCofactor(int colNum){
+    if (colNum%2 == 0){
+        return 1;
+    }else {
+        return -1;
+    }
+}
+</code></pre>
+</div>
+
+<p>接下来就是核心的递归求解行列式的算法了，先理一下思路，<strong>递归算法的两个要素：基准情形，不断推进</strong>。</p>
+
+<p>对于n阶矩阵什么是基准情形呢？就是矩阵被降为2×2维度的时候，直接返回交叉相乘的差即可，不断推进，如果是一个4阶矩阵，算法会先把4将为3×3矩阵，然后3×3再拆成3个2×2矩阵来达到基准情形来算出答案，就和我们手算行列式时用到的方法一样，手算时候也遵循这一算法。</p>
+
+<div class="highlighter-rouge"><pre class="highlight"><code>public static int getDet(Matrix targetMatrix){
+    //Base (Finally reduced to 2 x 2 Matrix)
+    if (targetMatrix.rowNum == 2){
+        int[][] arr = targetMatrix.getArray();
+        // a*d - b*c
+        return arr[0][0]*arr[1][1] - arr[0][1]*arr[1][0];
+    }
+
+    //MARK- Recursion: to reduce dimension
+    int det = 0;
+    int colNum = targetMatrix.rowNum;
+    for (int i = 0; &lt; colNum;i++){
+        det+= (targetMatrix.getArray()[i][0])*getCofactor(i)*getDet(removeRowAndCol(i,0,targetMatrix));
+    }
+
+    return det;
+}
+</code></pre>
+</div>
+
+<p>只有不到20行代码，但是却可以解决nxn的矩阵，是不是很神奇，这就是递归的优势，把一个很庞大的问题转化为规模缩小了的同类问题的子问题来求解。n阶矩阵最后被降为若干个2×2矩阵。</p>
+
+<p>加上适当的输出语句，来求解一个3阶矩阵行列式试一下：</p>
+
+<div class="highlighter-rouge"><pre class="highlight"><code>2   1    2
+-1   5   21
+13 -1  -17
+
+Element: 2
+Cofactor: 1
+Removing Row 0 Col 0
+A 2 x 2 Matrix is initialized
+5 21
+-1 -17
+END State Reached
+Det: -64
+
+Element: -1
+Cofactor: -1
+Removing Row 1 Col 0
+A 2 x 2 Matrix is initialized
+1 2
+-1 -17
+END State Reached
+Det: -15
+
+Element: 13
+Cofactor: 1
+Removing Row 2 Col 0
+A 2 x 2 Matrix is initialized
+1 2
+5 21
+END State Reached
+Det: 11
+Result: 0
+</code></pre>
+</div>
+
+<p>但是有一个问题需要注意，就是这个算法的复杂度。</p>
+
+<h3 id="算法复杂度">算法复杂度</h3>
+
+<p>这个算法的复杂度为O(n!), 这意味着他的运行速度很慢，随着问题规模的增长，时间会大幅度增长。在我的电脑上，计算3×3到7×7内规模的矩阵，电脑都可以秒算出来，但是如果是一个10×10的矩阵，电脑需要54秒钟，到了11×11时间将会变得更长，下图是这个算法随着问题规模增长对运行时产生影响的曲线。</p>
+
+<p>可以看出7×7矩阵需要递归517次，到了10×10需要大约260万次递归运算才能得到结果。可见问题规模增长后时间的开销是十分巨大的。</p>
+
+<p><img src="http://source.francissoung.com/2016%2F03%2F30%2Fn%E9%98%B6%E7%9F%A9%E9%98%B5%E8%A1%8C%E5%88%97%E5%BC%8F%E6%B1%82%E8%A7%A35.png" alt="" /></p>
+
+<p>原文：<a href="http://miketech.it/recursion_algorithm/">http://miketech.it/recursion_algorithm/</a></p>
+
+
+                <hr>
+
+                
+
+                <!-- Baidu Share start-->
+                <div class="bdsharebuttonbox">
+                    <a href="#" class="bds_more" data-cmd="more"></a>
+                    <a href="#" class="bds_tsina" data-cmd="tsina" title="分享到新浪微博"></a>
+                    <a href="#" class="bds_weixin" data-cmd="weixin" title="分享到微信"></a>
+                    <a href="#" class="bds_qzone" data-cmd="qzone" title="分享到QQ空间"></a>
+                    <a href="#" class="bds_douban" data-cmd="douban" title="分享到豆瓣网"></a>
+                </div>
+                <!-- Baidu Share end -->
+
+
+                <ul class="pager">
+                    
+                    <li class="previous">
+                        <a href="/2016/03/27/%E4%BC%BC%E6%B0%B4%E5%B9%B4%E5%8D%8E%E4%B9%8B%E5%9B%9E%E7%82%89%E5%86%8D%E9%80%A0/" data-toggle="tooltip" data-placement="top" title="似水年华之回炉再造">
+                            Previous<br>
+                            <span>似水年华之回炉再造</span>
+                        </a>
+                    </li>
+                    
+                    
+                    <li class="next">
+                        <a href="/2016/04/12/WebService%E7%9A%84%E4%B8%A4%E7%A7%8D%E6%96%B9%E5%BC%8FSOAP%E5%92%8CREST%E6%AF%94%E8%BE%83/" data-toggle="tooltip" data-placement="top" title="WebService的两种方式SOAP和REST比较">
+                            Next<br>
+                            <span>WebService的两种方式SOAP和REST比较</span>
+                        </a>
+                    </li>
+                    
+                </ul>
+
+
+                
+
+                
+                <!-- disqus 评论框 start -->
+                <div class="comment">
+                    <div id="disqus_thread" class="disqus-thread"></div>
+                </div>
+                <!-- disqus 评论框 end -->
+                
+
+            </div>
+
+            <!-- Sidebar Container -->
+            <div class="
+                col-lg-8 col-lg-offset-2
+                col-md-10 col-md-offset-1
+                sidebar-container">
+
+                <!-- Featured Tags -->
+                
+                <section>
+                    <hr class="hidden-sm hidden-xs">
+                    <h5><a href="/tags/">FEATURED TAGS</a></h5>
+                    <div class="tags">
+                        
+                        
+                        <a href="/tags/#Linux" title="Linux" rel="10">
+                            Linux
+                        </a>
+                        
+                        
+                        
+                        <a href="/tags/#Francis 旅行录" title="Francis 旅行录" rel="6">
+                            Francis 旅行录
+                        </a>
+                        
+                        
+                        
+                        <a href="/tags/#Francis 简单生活" title="Francis 简单生活" rel="6">
+                            Francis 简单生活
+                        </a>
+                        
+                        
+                        
+                        
+                        
+                        <a href="/tags/#PHP" title="PHP" rel="6">
+                            PHP
+                        </a>
+                        
+                        
+                        
+                        <a href="/tags/#MySQL" title="MySQL" rel="3">
+                            MySQL
+                        </a>
+                        
+                        
+                        
+                        <a href="/tags/#Apache" title="Apache" rel="2">
+                            Apache
+                        </a>
+                        
+                        
+                        
+                        <a href="/tags/#Francis 杂谈" title="Francis 杂谈" rel="13">
+                            Francis 杂谈
+                        </a>
+                        
+                        
+                        
+                        <a href="/tags/#OS X" title="OS X" rel="2">
+                            OS X
+                        </a>
+                        
+                        
+                        
+                        
+                        
+                        <a href="/tags/#Nginx" title="Nginx" rel="2">
+                            Nginx
+                        </a>
+                        
+                        
+                        
+                        
+                        
+                        <a href="/tags/#编程" title="编程" rel="4">
+                            编程
+                        </a>
+                        
+                        
+                        
+                        
+                        
+                        <a href="/tags/#C语言" title="C语言" rel="2">
+                            C语言
+                        </a>
+                        
+                        
+                        
+                        <a href="/tags/#架构" title="架构" rel="2">
+                            架构
+                        </a>
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                    </div>
+                </section>
+                
+
+                <!-- Friends Blog -->
+                
+                <hr>
+                <h5>FRIENDS</h5>
+                <ul class="list-inline">
+                    
+                    <li><a href="http://blog.maryopen.com/">马力全开</a></li>
+                    
+                    <li><a href="http://lfyqzhang.com/">宇过天勤</a></li>
+                    
+                    <li><a href="http://www.april2nd.me/">航哥</a></li>
+                    
+                    <li><a href="http://blog.ichuck.net/">鹏哥</a></li>
+                    
+                    <li><a href="http://www.shmilyx.net/">望望</a></li>
+                    
+                    <li><a href="http://www.51hsw.com/">好一网</a></li>
+                    
+                </ul>
+                
+            </div>
+        </div>
+    </div>
+</article>
+
+
+
+
+<!--百度分享公共JS代码 start-->
+<script>window._bd_share_config={"common":{"bdSnsKey":{},"bdText":"","bdMini":"1","bdMiniList":false,"bdPic":"","bdStyle":"1","bdSize":"24"},"share":{}};with(document)0[(getElementsByTagName('head')[0]||body).appendChild(createElement('script')).src='http://bdimg.share.baidu.com/static/api/js/share.js?v=89860593.js?cdnversion='+~(-new Date()/36e5)];</script>
+<!--百度分享公共JS代码 end-->
+
+
+
+<!-- disqus 公共JS代码 start (一个网页只需插入一次) -->
+<script type="text/javascript">
+    /* * * CONFIGURATION VARIABLES * * */
+    var disqus_shortname = "francissoungblog";
+    var disqus_identifier = "/2016/03/31/递归算法之n阶矩阵行列式求解";
+    var disqus_url = "http://localhost:4000/2016/03/31/%E9%80%92%E5%BD%92%E7%AE%97%E6%B3%95%E4%B9%8Bn%E9%98%B6%E7%9F%A9%E9%98%B5%E8%A1%8C%E5%88%97%E5%BC%8F%E6%B1%82%E8%A7%A3/";
+
+    (function() {
+        var dsq = document.createElement('script'); dsq.type = 'text/javascript'; dsq.async = true;
+        dsq.src = '//' + disqus_shortname + '.disqus.com/embed.js';
+        (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
+    })();
+</script>
+<!-- disqus 公共JS代码 end -->
+
+
+
+
+<!-- async load function -->
+<script>
+    function async(u, c) {
+        var d = document, t = 'script',
+                o = d.createElement(t),
+                s = d.getElementsByTagName(t)[0];
+        o.src = u;
+        if (c) { o.addEventListener('load', function (e) { c(null, e); }, false); }
+        s.parentNode.insertBefore(o, s);
+    }
+</script>
+<!-- anchor-js, Doc:http://bryanbraun.github.io/anchorjs/ -->
+<script>
+    async("http://cdn.bootcss.com/anchor-js/1.1.1/anchor.min.js",function(){
+        anchors.options = {
+            visible: 'always',
+            placement: 'right',
+            icon: '#'
+        };
+        anchors.add().remove('.intro-header h1').remove('.subheading').remove('.sidebar-container h5');
+    })
+</script>
+<style>
+    /* place left on bigger screen */
+    @media all and (min-width: 800px) {
+        .anchorjs-link{
+            position: absolute;
+            left: -0.75em;
+            font-size: 1.1em;
+            margin-top : -0.1em;
+        }
+    }
+</style>
+
+
+
+
+    <!-- Footer -->
+<footer>
+    <div class="container">
+        <div class="row">
+            <div class="col-lg-8 col-lg-offset-2 col-md-10 col-md-offset-1">
+                <ul class="list-inline text-center">
+                    
+
+                    
+                    <li>
+                        <a target="_blank" href="http://weibo.com/523072343">
+                            <span class="fa-stack fa-lg">
+                                <i class="fa fa-circle fa-stack-2x"></i>
+                                <i class="fa fa-weibo fa-stack-1x fa-inverse"></i>
+                            </span>
+                        </a>
+                    </li>
+                    
+
+                    
+                    <li>
+                        <a target="_blank" href="https://www.zhihu.com/people/Franciskeke">
+                            <span class="fa-stack fa-lg">
+                                <i class="fa fa-circle fa-stack-2x"></i>
+                                <i class="fa  fa-stack-1x fa-inverse">知</i>
+                            </span>
+                        </a>
+                    </li>
+                    
+
+                    
+                    <li>
+                        <a target="_blank" href="https://segmentfault.com/u/francissoung">
+                                    <span class="fa-stack fa-lg">
+                                        <i class="fa fa-circle fa-stack-2x"></i>
+                                        <i class="fa  fa-stack-1x fa-inverse">sf</i>
+                                    </span>
+                        </a>
+                    </li>
+                    
+
+                    
+                    <li>
+                        <a target="_blank" href="https://github.com/FrancisSoung">
+                            <span class="fa-stack fa-lg">
+                                <i class="fa fa-circle fa-stack-2x"></i>
+                                <i class="fa fa-github fa-stack-1x fa-inverse"></i>
+                            </span>
+                        </a>
+                    </li>
+                    
+
+                    
+                    <li>
+                        <a target="_blank" href="https://www.facebook.com/francis.soung">
+                            <span class="fa-stack fa-lg">
+                                <i class="fa fa-circle fa-stack-2x"></i>
+                                <i class="fa fa-facebook fa-stack-1x fa-inverse"></i>
+                            </span>
+                        </a>
+                    </li>
+                    
+
+                    
+                    <li>
+                        <a href="https://twitter.com/Francis_Soung">
+                            <span class="fa-stack fa-lg">
+                                <i class="fa fa-circle fa-stack-2x"></i>
+                                <i class="fa fa-twitter fa-stack-1x fa-inverse"></i>
+                            </span>
+                        </a>
+                    </li>
+                    
+
+                </ul>
+                <p class="copyright text-muted">
+                    Copyright &copy; St.thomas 2017
+                    <br>
+                    Powered by <a href="https://github.com/mojombo/jekyll">Jekyll</a> and <a href="http://www.bootcss.com/">Bootstrap</a> | 京ICP备15036690号-1
+                </p>
+            </div>
+        </div>
+    </div>
+</footer>
+
+
+<p id="back-to-top"><a href="#top"><span></span></a></p>
+
+
+<script src="http://7xl0td.com1.z0.glb.clouddn.com/js%2Fjquery.min.js"></script>
+<script src="http://7xl0td.com1.z0.glb.clouddn.com/js%2Fbootstrap.min.js"></script>
+<script src="http://7xl0td.com1.z0.glb.clouddn.com/js%2Ffrancis-blog.min.js"></script>
+
+
+<!-- async load function -->
+<script>
+    function async(u, c) {
+      var d = document, t = 'script',
+          o = d.createElement(t),
+          s = d.getElementsByTagName(t)[0];
+      o.src = u;
+      if (c) { o.addEventListener('load', function (e) { c(null, e); }, false); }
+      s.parentNode.insertBefore(o, s);
+    }
+</script>
+
+<!-- Highlight.js -->
+<script>
+    async("http://cdn.bootcss.com/highlight.js/8.6/highlight.min.js", function(){
+        hljs.initHighlightingOnLoad();
+    })
+    // only load tagcloud.js in tag.html
+    if($('#tag_cloud').length !== 0){
+        async("/js/jquery.tagcloud.js",function(){
+            $.fn.tagcloud.defaults = {
+                //size: {start: 1, end: 1, unit: 'em'},
+                color: {start: '#bbbbee', end: '#0085a1'},
+            };
+            $('#tag_cloud a').tagcloud();
+        })
+    }
+</script>
+<link href="http://cdn.bootcss.com/highlight.js/8.6/styles/github.min.css" rel="stylesheet">
+
+<!--fastClick.js -->
+<script>
+    async("http://cdn.bootcss.com/fastclick/1.0.6/fastclick.min.js", function(){
+        // var $nav = document.querySelector("nav");
+        // if($nav) FastClick.attach($nav);
+
+        // global FastClick!!
+        FastClick.attach(document.body);    
+    })
+</script>
+
+
+<!-- Google Analytics -->
+
+
+
+<!-- Baidu Tongji -->
+
+<script>
+    // dynamic User by Francis Soung
+    var _baId = '551c451674b914ab3e454205afd429a8';
+
+    // Originial
+    var _hmt = _hmt || [];
+    (function() {
+      var hm = document.createElement("script");
+      hm.src = "//hm.baidu.com/hm.js?" + _baId;
+      var s = document.getElementsByTagName("script")[0];
+      s.parentNode.insertBefore(hm, s);
+    })();
+</script>
+
+
+<!-- Baidu zhanzhang -->
+<script>
+    (function(){
+        var bp = document.createElement('script');
+        bp.src = '//push.zhanzhang.baidu.com/push.js';
+        var s = document.getElementsByTagName("script")[0];
+        s.parentNode.insertBefore(bp, s);
+    })();
+</script>
+
+<!--返回顶部-->
+<script>
+    $(function(){
+        //当滚动条的位置处于距顶部100像素以下时，跳转链接出现，否则消失
+        $(function () {
+            $(window).scroll(function(){
+                if ($(window).scrollTop()>100){
+                    $("#back-to-top").fadeIn(1500);
+                }
+                else
+                {
+                    $("#back-to-top").fadeOut(1500);
+                }
+            });
+
+            //当点击跳转链接后，回到页面顶部位置
+
+            $("#back-to-top").click(function(){
+                $('body,html').animate({scrollTop:0},1000);
+                return false;
+            });
+        });
+    });
+</script>
+
+
+
+<!-- Image to hack wechat -->
+<img src="/img/icon_wechat.png" alt="Francis Soung" width="0" height="0" />
+<!-- Migrate from head to bottom, no longer block render and still work -->
+
+</body>
+
+</html>
